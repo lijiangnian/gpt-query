@@ -1,12 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <queries>
         <package android:name="com.follow.clash" />
         <package android:name="com.github.metacubex.clash.meta" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="vless" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="clashmeta" />
         </intent>
     </queries>
 
