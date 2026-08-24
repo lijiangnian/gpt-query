@@ -150,10 +150,11 @@ public class MainActivity extends Activity {
 
         format = new Spinner(this);
         String[] formats = {
-                "Hiddify · VLESS URL",
-                "v2rayNG / Xray · VLESS URL",
-                "通用客户端 · VLESS URL",
-                "Clash Meta / Mihomo · YAML 兜底"
+                "1 · Hiddify · VLESS URL",
+                "2 · v2rayNG · VLESS URL",
+                "3 · Clash Meta / Mihomo · YAML 兜底",
+                "4 · Xray · VLESS URL",
+                "5 · 其他 VLESS 客户端 · URL"
         };
         ArrayAdapter<String> adapter = new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, formats) {
             @Override public View getView(int position, View convertView, android.view.ViewGroup parent) {
@@ -172,7 +173,7 @@ public class MainActivity extends Activity {
             @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
         });
 
-        modeHint = text("Hiddify 可直接导入 VLESS URL，无需 JSON 配置。", 12, false);
+        modeHint = text("推荐：Hiddify，可直接导入 VLESS URL，无需配置文件。", 12, false);
         modeHint.setTextColor(GREEN);
         LinearLayout.LayoutParams hintLp = lp();
         hintLp.topMargin = dp(10);
@@ -213,12 +214,12 @@ public class MainActivity extends Activity {
         qrLp.leftMargin = dp(8);
         row2.addView(qr, qrLp);
 
-        TextView compatTitle = text("怎么用", 14, true);
+        TextView compatTitle = text("推荐顺序", 14, true);
         LinearLayout.LayoutParams ctLp = lp();
         ctLp.topMargin = dp(18);
         root.addView(compatTitle, ctLp);
 
-        TextView compat = text("Hiddify：复制 VLESS URL 后直接导入，或扫码。\nv2rayNG：复制 VLESS URL 后从剪贴板导入，或扫码。\n其他 VLESS 客户端：优先直接使用 URL。\nClash Meta / Mihomo：单节点通常不能直接吃 vless://，需要订阅 URL 或 YAML，所以这里只保留 YAML 兜底。", 12, false);
+        TextView compat = text("1. Hiddify：首选，直接导入 VLESS URL，操作最省事。\n2. v2rayNG：Android 上成熟稳定，直接从剪贴板或扫码导入。\n3. Clash Meta / Mihomo：适合需要规则分流的人，但单节点通常需要 YAML / 订阅。\n4. Xray：直接使用标准 VLESS URL，适合熟悉 Xray 的用户。\n5. 其他客户端：只要支持 VLESS URL，都可以直接使用。", 12, false);
         compat.setTextColor(MUTED);
         compat.setLineSpacing(0, 1.2f);
         LinearLayout.LayoutParams compatLp = lp();
@@ -284,15 +285,16 @@ public class MainActivity extends Activity {
     private void render() {
         if (current == null || output == null || format == null) return;
         int p = format.getSelectedItemPosition();
-        if (p == 3) {
+        if (p == 2) {
             output.setText(current.toClash());
-            modeHint.setText("Clash Meta / Mihomo 单节点通常需要 YAML；如果以后接入订阅托管，可再生成订阅 URL。 ");
+            modeHint.setText("Clash Meta / Mihomo：单节点通常需要 YAML；有订阅地址时优先使用订阅 URL。");
             modeHint.setTextColor(Color.rgb(255, 193, 94));
         } else {
             output.setText(current.raw);
-            if (p == 0) modeHint.setText("Hiddify 可直接导入这个 VLESS URL，无需转换成 JSON。 ");
-            else if (p == 1) modeHint.setText("v2rayNG / Xray 可直接导入这个 VLESS URL。 ");
-            else modeHint.setText("这是标准 VLESS URL，可用于支持 VLESS 的客户端。 ");
+            if (p == 0) modeHint.setText("首选 Hiddify：直接导入这个 VLESS URL 即可。");
+            else if (p == 1) modeHint.setText("v2rayNG：可从剪贴板或二维码直接导入这个 VLESS URL。");
+            else if (p == 3) modeHint.setText("Xray：可直接使用标准 VLESS URL。");
+            else modeHint.setText("标准 VLESS URL：适用于支持 VLESS 的客户端。");
             modeHint.setTextColor(GREEN);
         }
     }
@@ -302,7 +304,7 @@ public class MainActivity extends Activity {
         if (s.isEmpty()) { toast("没有可复制的内容"); return; }
         ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("VLink output", s));
-        toast(format.getSelectedItemPosition() == 3 ? "已复制 Clash Meta 配置" : "URL 已复制，可直接导入");
+        toast(format.getSelectedItemPosition() == 2 ? "已复制 Clash Meta 配置" : "URL 已复制，可直接导入");
     }
 
     private void shareOutput() {
@@ -338,7 +340,7 @@ public class MainActivity extends Activity {
         status.setText("等待输入");
         status.setTextColor(MUTED);
         nodeInfo.setVisibility(View.GONE);
-        modeHint.setText("Hiddify 可直接导入 VLESS URL，无需 JSON 配置。");
+        modeHint.setText("推荐：Hiddify，可直接导入 VLESS URL，无需配置文件。");
         modeHint.setTextColor(GREEN);
     }
 
