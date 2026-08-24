@@ -45,6 +45,7 @@ public class MainActivity extends Activity {
     private Spinner format;
     private TextView status;
     private TextView nodeInfo;
+    private TextView modeHint;
     private VlessNode current;
 
     @Override
@@ -67,16 +68,16 @@ public class MainActivity extends Activity {
         brand.setTextColor(Color.rgb(135, 145, 255));
         root.addView(brand);
 
-        TextView title = text("节点转换器", 30, true);
+        TextView title = text("节点 URL 转换器", 30, true);
         LinearLayout.LayoutParams titleLp = lp();
         titleLp.topMargin = dp(4);
         root.addView(title, titleLp);
 
-        TextView sub = text("一个链接，多客户端直接使用", 14, false);
+        TextView sub = text("优先输出可直接导入的链接，配置文件只做兜底", 14, false);
         sub.setTextColor(MUTED);
         root.addView(sub);
 
-        TextView local = text("● 本地离线转换 · 节点信息不会上传", 13, false);
+        TextView local = text("● 本地离线处理 · 节点信息不会上传", 13, false);
         local.setTextColor(GREEN);
         LinearLayout.LayoutParams localLp = lp();
         localLp.topMargin = dp(12);
@@ -110,11 +111,11 @@ public class MainActivity extends Activity {
         rowLp.topMargin = dp(10);
         inputCard.addView(row1, rowLp);
 
-        Button paste = primaryButton("粘贴并转换");
+        Button paste = primaryButton("粘贴并识别");
         paste.setOnClickListener(v -> pasteAndParse());
         row1.addView(paste, weightLp());
 
-        Button url = secondaryButton("URL 导入");
+        Button url = secondaryButton("手动输入");
         url.setOnClickListener(v -> showUrlDialog());
         LinearLayout.LayoutParams urlLp = weightLp();
         urlLp.leftMargin = dp(8);
@@ -144,15 +145,15 @@ public class MainActivity extends Activity {
         outCardLp.topMargin = dp(14);
         root.addView(outputCard, outCardLp);
 
-        TextView outLabel = text("目标客户端 / 格式", 15, true);
+        TextView outLabel = text("我要导入到", 15, true);
         outputCard.addView(outLabel);
 
         format = new Spinner(this);
         String[] formats = {
-                "Clash Meta / Mihomo · YAML",
-                "Hiddify / sing-box · JSON",
-                "v2rayNG / Xray · JSON",
-                "通用 VLESS · 原始链接"
+                "Hiddify · VLESS URL",
+                "v2rayNG / Xray · VLESS URL",
+                "通用客户端 · VLESS URL",
+                "Clash Meta / Mihomo · YAML 兜底"
         };
         ArrayAdapter<String> adapter = new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, formats) {
             @Override public View getView(int position, View convertView, android.view.ViewGroup parent) {
@@ -171,12 +172,18 @@ public class MainActivity extends Activity {
             @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
         });
 
+        modeHint = text("Hiddify 可直接导入 VLESS URL，无需 JSON 配置。", 12, false);
+        modeHint.setTextColor(GREEN);
+        LinearLayout.LayoutParams hintLp = lp();
+        hintLp.topMargin = dp(10);
+        outputCard.addView(modeHint, hintLp);
+
         output = new EditText(this);
         output.setTextColor(Color.rgb(226, 231, 240));
         output.setTextSize(12);
         output.setBackground(round(Color.rgb(18, 21, 28), 16));
         output.setPadding(dp(14), dp(14), dp(14), dp(14));
-        output.setMinLines(13);
+        output.setMinLines(6);
         output.setGravity(Gravity.TOP | Gravity.START);
         output.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         output.setHorizontallyScrolling(false);
@@ -190,7 +197,7 @@ public class MainActivity extends Activity {
         actionLp.topMargin = dp(10);
         outputCard.addView(row2, actionLp);
 
-        Button copy = primaryButton("复制结果");
+        Button copy = primaryButton("复制 URL / 结果");
         copy.setOnClickListener(v -> copyOutput());
         row2.addView(copy, weightLp());
 
@@ -206,12 +213,12 @@ public class MainActivity extends Activity {
         qrLp.leftMargin = dp(8);
         row2.addView(qr, qrLp);
 
-        TextView compatTitle = text("兼容说明", 14, true);
+        TextView compatTitle = text("怎么用", 14, true);
         LinearLayout.LayoutParams ctLp = lp();
         ctLp.topMargin = dp(18);
         root.addView(compatTitle, ctLp);
 
-        TextView compat = text("Clash Meta / Mihomo：输出可加入 proxies 的 YAML\nHiddify：输出 sing-box VLESS outbound JSON\nv2rayNG：输出 Xray VLESS outbound JSON\n其他支持 VLESS 的客户端：可直接复制原始 VLESS 链接", 12, false);
+        TextView compat = text("Hiddify：复制 VLESS URL 后直接导入，或扫码。\nv2rayNG：复制 VLESS URL 后从剪贴板导入，或扫码。\n其他 VLESS 客户端：优先直接使用 URL。\nClash Meta / Mihomo：单节点通常不能直接吃 vless://，需要订阅 URL 或 YAML，所以这里只保留 YAML 兜底。", 12, false);
         compat.setTextColor(MUTED);
         compat.setLineSpacing(0, 1.2f);
         LinearLayout.LayoutParams compatLp = lp();
@@ -244,11 +251,11 @@ public class MainActivity extends Activity {
         field.setMinLines(3);
         field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         new AlertDialog.Builder(this)
-                .setTitle("URL 导入")
-                .setMessage("粘贴完整 VLESS 节点 URL")
+                .setTitle("输入 VLESS URL")
+                .setMessage("粘贴完整节点链接")
                 .setView(field)
                 .setNegativeButton("取消", null)
-                .setPositiveButton("导入", (d, w) -> {
+                .setPositiveButton("识别", (d, w) -> {
                     input.setText(field.getText().toString().trim());
                     parseInput();
                 }).show();
@@ -264,7 +271,7 @@ public class MainActivity extends Activity {
             nodeInfo.setText(current.host + ":" + current.port + "  ·  " + current.type.toUpperCase() + "  ·  " + current.name);
             nodeInfo.setVisibility(View.VISIBLE);
             render();
-            toast("转换完成");
+            toast("识别完成");
         } catch (Exception e) {
             current = null;
             output.setText("");
@@ -276,11 +283,17 @@ public class MainActivity extends Activity {
 
     private void render() {
         if (current == null || output == null || format == null) return;
-        switch (format.getSelectedItemPosition()) {
-            case 1: output.setText(current.toSingBox()); break;
-            case 2: output.setText(current.toXray()); break;
-            case 3: output.setText(current.raw); break;
-            default: output.setText(current.toClash());
+        int p = format.getSelectedItemPosition();
+        if (p == 3) {
+            output.setText(current.toClash());
+            modeHint.setText("Clash Meta / Mihomo 单节点通常需要 YAML；如果以后接入订阅托管，可再生成订阅 URL。 ");
+            modeHint.setTextColor(Color.rgb(255, 193, 94));
+        } else {
+            output.setText(current.raw);
+            if (p == 0) modeHint.setText("Hiddify 可直接导入这个 VLESS URL，无需转换成 JSON。 ");
+            else if (p == 1) modeHint.setText("v2rayNG / Xray 可直接导入这个 VLESS URL。 ");
+            else modeHint.setText("这是标准 VLESS URL，可用于支持 VLESS 的客户端。 ");
+            modeHint.setTextColor(GREEN);
         }
     }
 
@@ -289,7 +302,7 @@ public class MainActivity extends Activity {
         if (s.isEmpty()) { toast("没有可复制的内容"); return; }
         ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("VLink output", s));
-        toast("已复制，可直接粘贴到客户端");
+        toast(format.getSelectedItemPosition() == 3 ? "已复制 Clash Meta 配置" : "URL 已复制，可直接导入");
     }
 
     private void shareOutput() {
@@ -298,7 +311,7 @@ public class MainActivity extends Activity {
         Intent i = new Intent(Intent.ACTION_SEND);
         i.setType("text/plain");
         i.putExtra(Intent.EXTRA_TEXT, s);
-        startActivity(Intent.createChooser(i, "分享转换结果"));
+        startActivity(Intent.createChooser(i, "分享节点"));
     }
 
     private void showQr() {
@@ -314,7 +327,7 @@ public class MainActivity extends Activity {
             iv.setPadding(dp(12), dp(12), dp(12), dp(12));
             new AlertDialog.Builder(this).setTitle("扫码导入").setView(iv).setPositiveButton("关闭", null).show();
         } catch (Exception e) {
-            toast("当前内容太长，建议使用“复制结果”导入");
+            toast("当前内容太长，建议使用复制导入");
         }
     }
 
@@ -325,6 +338,8 @@ public class MainActivity extends Activity {
         status.setText("等待输入");
         status.setTextColor(MUTED);
         nodeInfo.setVisibility(View.GONE);
+        modeHint.setText("Hiddify 可直接导入 VLESS URL，无需 JSON 配置。");
+        modeHint.setTextColor(GREEN);
     }
 
     private TextView text(String s, int sp, boolean bold) {
@@ -420,52 +435,7 @@ public class MainActivity extends Activity {
             return s.toString();
         }
 
-        String toSingBox() {
-            StringBuilder s = new StringBuilder();
-            s.append("{\n  \"type\": \"vless\",\n  \"tag\": ").append(json(name)).append(",\n");
-            s.append("  \"server\": ").append(json(host)).append(",\n  \"server_port\": ").append(port).append(",\n");
-            s.append("  \"uuid\": ").append(json(uuid));
-            if (!flow.isEmpty()) s.append(",\n  \"flow\": ").append(json(flow));
-            if ("reality".equalsIgnoreCase(security) || "tls".equalsIgnoreCase(security)) {
-                s.append(",\n  \"tls\": {\n    \"enabled\": true,\n    \"server_name\": ").append(json(sni));
-                s.append(",\n    \"utls\": {\"enabled\": true, \"fingerprint\": ").append(json(fp)).append("}");
-                if ("reality".equalsIgnoreCase(security)) {
-                    s.append(",\n    \"reality\": {\"enabled\": true, \"public_key\": ").append(json(pbk)).append(", \"short_id\": ").append(json(sid)).append("}");
-                }
-                s.append("\n  }");
-            }
-            if ("ws".equalsIgnoreCase(type)) {
-                s.append(",\n  \"transport\": {\"type\": \"ws\", \"path\": ").append(json(path));
-                if (!hostHeader.isEmpty()) s.append(", \"headers\": {\"Host\": ").append(json(hostHeader)).append("}");
-                s.append("}");
-            }
-            s.append("\n}");
-            return s.toString();
-        }
-
-        String toXray() {
-            StringBuilder s = new StringBuilder();
-            s.append("{\n  \"protocol\": \"vless\",\n  \"tag\": ").append(json(name)).append(",\n");
-            s.append("  \"settings\": {\"vnext\": [{\"address\": ").append(json(host)).append(", \"port\": ").append(port).append(", \"users\": [{\"id\": ").append(json(uuid));
-            if (!flow.isEmpty()) s.append(", \"flow\": ").append(json(flow));
-            s.append("}]}]},\n");
-            s.append("  \"streamSettings\": {\"network\": ").append(json(type)).append(", \"security\": ").append(json(security));
-            if ("reality".equalsIgnoreCase(security)) {
-                s.append(", \"realitySettings\": {\"serverName\": ").append(json(sni)).append(", \"fingerprint\": ").append(json(fp)).append(", \"publicKey\": ").append(json(pbk)).append(", \"shortId\": ").append(json(sid)).append("}");
-            } else if ("tls".equalsIgnoreCase(security)) {
-                s.append(", \"tlsSettings\": {\"serverName\": ").append(json(sni)).append("}");
-            }
-            if ("ws".equalsIgnoreCase(type)) {
-                s.append(", \"wsSettings\": {\"path\": ").append(json(path));
-                if (!hostHeader.isEmpty()) s.append(", \"headers\": {\"Host\": ").append(json(hostHeader)).append("}");
-                s.append("}");
-            }
-            s.append("}\n}");
-            return s.toString();
-        }
-
         static String val(String v, String d) { return v == null || v.isEmpty() ? d : v; }
         static String yaml(String s) { return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""; }
-        static String json(String s) { return "\"" + (s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")) + "\""; }
     }
 }
