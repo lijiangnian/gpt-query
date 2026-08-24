@@ -3,6 +3,8 @@ name: Build VLink APK
 on:
   push:
     branches: ["vlink-android"]
+  pull_request:
+    branches: ["main"]
   workflow_dispatch:
 
 jobs:
@@ -27,11 +29,11 @@ jobs:
         run: gradle :app:assembleDebug --stacktrace
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk VLink-Converter-v1.0.0-debug.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk VLink-Converter-v1.1.0-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: VLink-Converter-APK
-          path: VLink-Converter-v1.0.0-debug.apk
+          path: VLink-Converter-v1.1.0-debug.apk
           retention-days: 30
