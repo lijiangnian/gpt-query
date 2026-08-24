@@ -12,7 +12,6 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
-import android.provider.Settings;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
@@ -30,9 +29,16 @@ import com.google.zxing.BarcodeFormat;
 import com.google.zxing.MultiFormatWriter;
 import com.google.zxing.common.BitMatrix;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 
 public class MainActivity extends Activity {
     private static final int BG = Color.rgb(12, 13, 16);
@@ -41,6 +47,7 @@ public class MainActivity extends Activity {
     private static final int ACCENT = Color.rgb(76, 132, 255);
     private static final int GREEN = Color.rgb(71, 202, 143);
     private static final int MUTED = Color.rgb(166, 170, 180);
+    private static final int AMBER = Color.rgb(255, 194, 92);
     private static final int REQ_SAVE_YAML = 7001;
 
     private EditText input;
@@ -56,11 +63,19 @@ public class MainActivity extends Activity {
     private VlessNode current;
     private String pendingYaml;
     private String pendingFileName = "VLink-config.yaml";
+    private LocalProfileServer profileServer;
+    private boolean localUrlActive = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(buildUi());
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (profileServer != null) profileServer.stop();
+        super.onDestroy();
     }
 
     private View buildUi() {
@@ -75,11 +90,11 @@ public class MainActivity extends Activity {
 
         TextView title = text("VLink", 30, true);
         root.addView(title);
-        TextView sub = text("VLESS 一键整理 · 能直连就不转换", 14, false);
+        TextView sub = text("VLESS 一键整理 · URL 优先", 14, false);
         sub.setTextColor(MUTED);
         root.addView(sub);
 
-        TextView privacy = text("● 本地处理 · 不上传节点信息", 13, false);
+        TextView privacy = text("● 本地处理 · 节点不上传服务器", 13, false);
         privacy.setTextColor(GREEN);
         LinearLayout.LayoutParams privacyLp = lp();
         privacyLp.topMargin = dp(10);
@@ -138,14 +153,14 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams targetLp = lp();
         targetLp.topMargin = dp(14);
         root.addView(targetCard, targetLp);
-        targetCard.addView(text("2  选择怎么导入", 16, true));
+        targetCard.addView(text("2  选择导入方式", 16, true));
 
         target = new Spinner(this);
         String[] items = {
-                "直接导入 URL｜v2rayNG / Hiddify / Xray / 其他 VLESS",
-                "FlClash｜生成本地 YAML 配置文件",
-                "Clash Meta for Android｜生成本地 YAML 配置文件",
-                "其他 Clash / Mihomo｜生成 YAML 配置文件"
+                "直接 URL｜v2rayNG / Hiddify / Xray / 其他 VLESS",
+                "FlClash｜临时订阅 URL",
+                "Clash Meta for Android｜一键 URL 导入",
+                "其他 Clash / Mihomo｜临时订阅 URL"
         };
         ArrayAdapter<String> adapter = new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, items) {
             @Override public View getView(int position, View convertView, android.view.ViewGroup parent) {
@@ -168,7 +183,7 @@ public class MainActivity extends Activity {
             @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
         });
 
-        modeHint = text("支持 VLESS URL 的客户端不做二次转换，直接导入最稳。", 12, false);
+        modeHint = text("支持 VLESS URL 的客户端直接使用原链接，不做多余转换。", 12, false);
         modeHint.setTextColor(GREEN);
         LinearLayout.LayoutParams modeLp = lp();
         modeLp.topMargin = dp(10);
@@ -185,7 +200,7 @@ public class MainActivity extends Activity {
         output.setTextSize(12);
         output.setBackground(round(Color.rgb(20, 21, 25), 16));
         output.setPadding(dp(14), dp(14), dp(14), dp(14));
-        output.setMinLines(7);
+        output.setMinLines(6);
         output.setGravity(Gravity.TOP | Gravity.START);
         output.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         LinearLayout.LayoutParams outputLp = lp();
@@ -208,7 +223,7 @@ public class MainActivity extends Activity {
         qrLp.leftMargin = dp(8);
         actionRow1.addView(qrButton, qrLp);
 
-        saveButton = secondaryButton("保存 YAML");
+        saveButton = secondaryButton("YAML 备用");
         saveButton.setOnClickListener(v -> saveYaml());
         LinearLayout.LayoutParams saveLp = weightLp();
         saveLp.leftMargin = dp(8);
@@ -230,16 +245,16 @@ public class MainActivity extends Activity {
         openLp.leftMargin = dp(8);
         actionRow2.addView(openButton, openLp);
 
-        TextView guideTitle = text("导入方式", 15, true);
+        TextView guideTitle = text("怎么导入", 15, true);
         LinearLayout.LayoutParams guideTitleLp = lp();
         guideTitleLp.topMargin = dp(18);
         root.addView(guideTitle, guideTitleLp);
 
         TextView guide = text(
-                "直接导入集合：v2rayNG / Hiddify / Xray 等直接使用原始 vless:// URL。\n" +
-                "FlClash：配置 → ＋ → 文件 → 选择 VLink 保存的 .yaml。它本身也支持远程 URL 和二维码配置。\n" +
-                "Clash Meta for Android：配置 → ＋ → 文件 → 选择 VLink 保存的 .yaml；它也支持远程订阅 URL。\n" +
-                "这样不需要搭建服务器，也不会为了单个节点强行制造假订阅地址。", 12, false);
+                "直接 URL 集合：v2rayNG / Hiddify / Xray 等直接用原始 vless://。\n" +
+                "FlClash：VLink 生成仅在本机可访问的临时订阅 URL；复制后打开 FlClash → 配置 → ＋ → URL → 粘贴。\n" +
+                "Clash Meta for Android：VLink 生成临时订阅 URL，并可调用它官方支持的 install-config URL Scheme 一键导入。\n" +
+                "临时订阅只通过 127.0.0.1 在手机本机提供，不上传互联网；导入完成后即可关闭 VLink。", 12, false);
         guide.setTextColor(MUTED);
         guide.setLineSpacing(0, 1.2f);
         LinearLayout.LayoutParams guideLp = lp();
@@ -279,32 +294,62 @@ public class MainActivity extends Activity {
     }
 
     private void render() {
-        updateActionVisibility();
-        if (current == null || output == null || target == null) return;
+        localUrlActive = false;
+        if (current == null || output == null || target == null) {
+            updateActionVisibility();
+            return;
+        }
+
         int p = target.getSelectedItemPosition();
         if (p == 0) {
             output.setText(current.raw);
-            modeHint.setText("无需转换：复制 URL、扫码或直接尝试交给支持 VLESS 的客户端打开。");
+            pendingYaml = null;
+            modeHint.setText("无需转换：复制 URL、扫码，或直接交给支持 VLESS 的客户端打开。");
             modeHint.setTextColor(GREEN);
         } else {
             String yaml = current.toMihomoYaml();
-            output.setText(yaml);
             pendingYaml = yaml;
             pendingFileName = "VLink-" + safeName(current.name) + ".yaml";
-            if (p == 1) modeHint.setText("FlClash：生成完整 YAML，保存后从“配置 → ＋ → 文件”导入。");
-            else if (p == 2) modeHint.setText("Clash Meta：生成完整 YAML，保存后从“配置 → ＋ → 文件”导入。");
-            else modeHint.setText("Clash / Mihomo：生成完整 YAML 配置文件供本地导入。");
-            modeHint.setTextColor(Color.rgb(255, 194, 92));
+            try {
+                String url = ensureLocalProfileUrl(yaml);
+                output.setText(url);
+                localUrlActive = true;
+                if (p == 1) {
+                    modeHint.setText("FlClash：优先使用这个临时订阅 URL；打开 FlClash 后在“配置 → ＋ → URL”粘贴即可。");
+                } else if (p == 2) {
+                    modeHint.setText("Clash Meta：点击“一键导入”即可；也可以复制临时订阅 URL 手动添加。");
+                } else {
+                    modeHint.setText("其他 Clash / Mihomo：如果支持远程配置 URL，直接粘贴这个临时订阅地址。");
+                }
+                modeHint.setTextColor(GREEN);
+            } catch (Exception e) {
+                output.setText(yaml);
+                localUrlActive = false;
+                modeHint.setText("临时 URL 启动失败，已自动退回 YAML；仍可使用“YAML 备用”保存文件。");
+                modeHint.setTextColor(AMBER);
+            }
         }
+        updateActionVisibility();
+    }
+
+    private String ensureLocalProfileUrl(String yaml) throws Exception {
+        if (profileServer == null) profileServer = new LocalProfileServer();
+        profileServer.setContent(yaml);
+        profileServer.startIfNeeded();
+        return profileServer.getUrl();
     }
 
     private void updateActionVisibility() {
         if (target == null || primaryAction == null) return;
-        boolean direct = target.getSelectedItemPosition() == 0;
-        primaryAction.setText(direct ? "复制 URL" : "复制 YAML");
-        qrButton.setVisibility(direct ? View.VISIBLE : View.GONE);
+        int p = target.getSelectedItemPosition();
+        boolean direct = p == 0;
+        primaryAction.setText(direct ? "复制 VLESS URL" : (localUrlActive ? "复制导入 URL" : "复制 YAML"));
+        qrButton.setVisibility((direct || localUrlActive) ? View.VISIBLE : View.GONE);
         saveButton.setVisibility(direct ? View.GONE : View.VISIBLE);
-        openButton.setText(direct ? "直接打开" : "打开客户端");
+        if (p == 0) openButton.setText("直接打开");
+        else if (p == 1) openButton.setText("打开 FlClash");
+        else if (p == 2) openButton.setText(localUrlActive ? "一键导入" : "打开 Clash Meta");
+        else openButton.setText("复制后导入");
     }
 
     private void copyOutput() {
@@ -312,7 +357,10 @@ public class MainActivity extends Activity {
         if (s.isEmpty()) { toast("没有可复制的内容"); return; }
         ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("VLink", s));
-        toast(target.getSelectedItemPosition() == 0 ? "VLESS URL 已复制" : "YAML 已复制");
+        int p = target.getSelectedItemPosition();
+        if (p == 0) toast("VLESS URL 已复制");
+        else if (localUrlActive) toast("临时订阅 URL 已复制");
+        else toast("YAML 已复制");
     }
 
     private void saveYaml() {
@@ -332,9 +380,9 @@ public class MainActivity extends Activity {
         if (requestCode == REQ_SAVE_YAML && resultCode == RESULT_OK && data != null && data.getData() != null) {
             try (OutputStream os = getContentResolver().openOutputStream(data.getData())) {
                 if (os != null) {
-                    os.write(pendingYaml.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    os.write(pendingYaml.getBytes(StandardCharsets.UTF_8));
                     os.flush();
-                    toast("配置文件已保存，可去客户端选择“文件”导入");
+                    toast("YAML 已保存");
                 }
             } catch (Exception e) {
                 toast("保存失败：" + e.getMessage());
@@ -354,34 +402,82 @@ public class MainActivity extends Activity {
     private void openSelectedClient() {
         if (current == null) { toast("请先识别节点"); return; }
         int p = target.getSelectedItemPosition();
+
         if (p == 0) {
             try {
                 Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(current.raw));
                 startActivity(Intent.createChooser(i, "选择支持 VLESS 的客户端"));
             } catch (Exception e) {
-                toast("没有找到可直接打开 VLESS URL 的应用，请使用复制或二维码导入");
+                toast("没有找到可直接处理 VLESS URL 的应用，请复制或扫码导入");
             }
             return;
         }
-        String pkg = p == 1 ? "com.follow.clash" : (p == 2 ? "com.github.metacubex.clash.meta" : null);
-        if (pkg == null) { toast("请在目标 Clash / Mihomo 客户端中选择“从文件导入”"); return; }
+
+        if (!localUrlActive) {
+            if (p == 1) launchPackage("com.follow.clash", "未找到 FlClash");
+            else if (p == 2) launchPackage("com.github.metacubex.clash.meta", "未找到 Clash Meta for Android");
+            else toast("请把 YAML 导入目标 Clash / Mihomo 客户端");
+            return;
+        }
+
+        String localUrl = output.getText().toString();
+        if (p == 1) {
+            copyToClipboard(localUrl);
+            launchPackage("com.follow.clash", "未找到 FlClash；临时订阅 URL 已复制");
+            toast("URL 已复制：FlClash → 配置 → ＋ → URL → 粘贴");
+            return;
+        }
+
+        if (p == 2) {
+            try {
+                String deep = "clashmeta://install-config?url=" + Uri.encode(localUrl);
+                Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(deep));
+                i.setPackage("com.github.metacubex.clash.meta");
+                startActivity(i);
+            } catch (Exception first) {
+                try {
+                    String deep = "clash://install-config?url=" + Uri.encode(localUrl);
+                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(deep)));
+                } catch (Exception second) {
+                    copyToClipboard(localUrl);
+                    launchPackage("com.github.metacubex.clash.meta", "临时订阅 URL 已复制，请手动添加");
+                }
+            }
+            return;
+        }
+
+        copyToClipboard(localUrl);
+        toast("临时订阅 URL 已复制，请在目标客户端选择 URL / Remote Profile 导入");
+    }
+
+    private void launchPackage(String pkg, String failMessage) {
         Intent launch = getPackageManager().getLaunchIntentForPackage(pkg);
         if (launch != null) startActivity(launch);
-        else toast("未找到该客户端，请先安装或手动打开");
+        else toast(failMessage);
+    }
+
+    private void copyToClipboard(String s) {
+        ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("VLink", s));
     }
 
     private void showQr() {
-        if (current == null) { toast("请先识别节点"); return; }
+        String s = output.getText().toString();
+        if (s.isEmpty()) { toast("没有可生成二维码的内容"); return; }
         try {
-            String s = current.raw;
             int size = Math.min(getResources().getDisplayMetrics().widthPixels - dp(72), dp(420));
             BitMatrix m = new MultiFormatWriter().encode(s, BarcodeFormat.QR_CODE, size, size);
             Bitmap b = Bitmap.createBitmap(size, size, Bitmap.Config.RGB_565);
-            for (int y = 0; y < size; y++) for (int x = 0; x < size; x++) b.setPixel(x, y, m.get(x, y) ? Color.BLACK : Color.WHITE);
+            for (int y = 0; y < size; y++) {
+                for (int x = 0; x < size; x++) {
+                    b.setPixel(x, y, m.get(x, y) ? Color.BLACK : Color.WHITE);
+                }
+            }
             ImageView iv = new ImageView(this);
             iv.setImageBitmap(b);
             iv.setPadding(dp(14), dp(14), dp(14), dp(14));
-            new AlertDialog.Builder(this).setTitle("VLESS URL 二维码").setView(iv).setPositiveButton("关闭", null).show();
+            String title = target.getSelectedItemPosition() == 0 ? "VLESS URL 二维码" : "临时订阅 URL 二维码";
+            new AlertDialog.Builder(this).setTitle(title).setView(iv).setPositiveButton("关闭", null).show();
         } catch (Exception e) {
             toast("二维码生成失败");
         }
@@ -395,6 +491,9 @@ public class MainActivity extends Activity {
         status.setTextColor(MUTED);
         nodeInfo.setVisibility(View.GONE);
         pendingYaml = null;
+        localUrlActive = false;
+        if (profileServer != null) profileServer.setContent("");
+        updateActionVisibility();
     }
 
     private LinearLayout card() {
@@ -446,6 +545,65 @@ public class MainActivity extends Activity {
     private LinearLayout.LayoutParams lp() { return new LinearLayout.LayoutParams(-1, -2); }
     private LinearLayout.LayoutParams weightLp() { return new LinearLayout.LayoutParams(0, dp(46), 1f); }
     private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density + 0.5f); }
+
+    static class LocalProfileServer {
+        private final String token = UUID.randomUUID().toString().replace("-", "");
+        private volatile String content = "";
+        private volatile boolean running = false;
+        private ServerSocket serverSocket;
+        private Thread thread;
+
+        synchronized void startIfNeeded() throws Exception {
+            if (running && serverSocket != null && !serverSocket.isClosed()) return;
+            serverSocket = new ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"));
+            running = true;
+            thread = new Thread(() -> {
+                while (running) {
+                    try {
+                        Socket socket = serverSocket.accept();
+                        handle(socket);
+                    } catch (Exception ignored) {
+                        if (!running) break;
+                    }
+                }
+            }, "VLinkLocalProfileServer");
+            thread.setDaemon(true);
+            thread.start();
+        }
+
+        void setContent(String yaml) {
+            content = yaml == null ? "" : yaml;
+        }
+
+        String getUrl() {
+            if (serverSocket == null) return "";
+            return "http://127.0.0.1:" + serverSocket.getLocalPort() + "/vlink.yaml?token=" + token;
+        }
+
+        private void handle(Socket socket) {
+            try (Socket s = socket;
+                 BufferedReader reader = new BufferedReader(new InputStreamReader(s.getInputStream(), StandardCharsets.US_ASCII));
+                 OutputStream os = s.getOutputStream()) {
+                String first = reader.readLine();
+                boolean ok = first != null && first.startsWith("GET ") && first.contains("token=" + token);
+                byte[] body = ok ? content.getBytes(StandardCharsets.UTF_8) : "Not found".getBytes(StandardCharsets.UTF_8);
+                String headers = "HTTP/1.1 " + (ok ? "200 OK" : "404 Not Found") + "\r\n" +
+                        "Content-Type: text/yaml; charset=utf-8\r\n" +
+                        "Content-Length: " + body.length + "\r\n" +
+                        "Cache-Control: no-store, no-cache, must-revalidate\r\n" +
+                        "Connection: close\r\n\r\n";
+                os.write(headers.getBytes(StandardCharsets.US_ASCII));
+                os.write(body);
+                os.flush();
+            } catch (Exception ignored) { }
+        }
+
+        synchronized void stop() {
+            running = false;
+            try { if (serverSocket != null) serverSocket.close(); } catch (Exception ignored) { }
+            serverSocket = null;
+        }
+    }
 
     static class VlessNode {
         String raw, uuid, host, name, type, security, sni, pbk, sid, fp, flow, path, hostHeader;
