@@ -65,7 +65,7 @@ jobs:
           sed -Ei 's/versionCode [0-9]+/versionCode 5/' MediaParserApp/app/build.gradle
           sed -Ei "s/versionName '[^']+'/versionName '0.1.4'/" MediaParserApp/app/build.gradle
           grep -q 'secondaryButton("打开文件夹")' MediaParserApp/app/src/main/java/com/example/mediaparser/MainActivity.java
-          grep -q 'secondaryButton("提取")' MediaParserApp/app/src/main/java/com/example/mediaparser/MainActivity.java
+          grep -q 'saveLabel = "提取"' MediaParserApp/app/src/main/java/com/example/mediaparser/MainActivity.java
           grep -q 'Music/MediaParser' MediaParserApp/app/src/main/java/com/example/mediaparser/MainActivity.java
           grep -q "versionCode 5" MediaParserApp/app/build.gradle
           grep -q "versionName '0.1.4'" MediaParserApp/app/build.gradle
