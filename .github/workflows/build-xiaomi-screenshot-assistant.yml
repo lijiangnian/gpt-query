@@ -24,6 +24,9 @@ jobs:
           gzip -t /tmp/xiaomi-v11.tar.gz
           rm -rf xiaomi-screenshot-assistant-v1.1
           tar -xzf /tmp/xiaomi-v11.tar.gz
+      - name: Apply source compile fix
+        run: |
+          sed -i 's/textSize = 15f; singleLine = true; inputType =/textSize = 15f; setSingleLine(true); inputType =/' xiaomi-screenshot-assistant-v1.1/app/src/main/java/com/vsme/screenshotassistant/MainActivity.kt
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
