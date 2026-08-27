@@ -39,6 +39,7 @@ jobs:
           sed -Ei 's/versionCode [0-9]+/versionCode 3/' MediaParserApp/app/build.gradle
           sed -Ei "s/versionName '[^']+'/versionName '0.1.2'/" MediaParserApp/app/build.gradle
 
+      # Five verified chunks avoid connector truncation on the v0.1.3 patch archive.
       - name: Apply v0.1.3 platform audio patch
         shell: bash
         run: |
