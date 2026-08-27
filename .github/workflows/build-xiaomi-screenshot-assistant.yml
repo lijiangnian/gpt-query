@@ -18,6 +18,21 @@ jobs:
           cat xiaomi-screenshot-assistant/chunks/*.b64 | base64 -d > /tmp/xiaomi-src.tar.gz
           gzip -t /tmp/xiaomi-src.tar.gz
           tar -xzf /tmp/xiaomi-src.tar.gz
+      - name: Apply compile fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('xiaomi-screenshot-assistant/app/src/main/java/com/vsme/screenshotassistant/MainActivity.kt')
+          s = p.read_text()
+          s = s.replace('background = Color.rgb(247, 247, 248)', 'setBackgroundColor(Color.rgb(247, 247, 248))')
+          p.write_text(s)
+
+          p = Path('xiaomi-screenshot-assistant/app/src/main/java/com/vsme/screenshotassistant/TranslationEngine.kt')
+          s = p.read_text()
+          s = s.replace('import com.google.mlkit.nl.translate.DownloadConditions\n', '')
+          s = s.replace('                val conditions = DownloadConditions.Builder().build()\n\n                translator.downloadModelIfNeeded(conditions)', '                translator.downloadModelIfNeeded()')
+          p.write_text(s)
+          PY
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
