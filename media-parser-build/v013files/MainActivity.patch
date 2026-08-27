@@ -1,0 +1,102 @@
+--- a/app/src/main/java/com/example/mediaparser/MainActivity.java
++++ b/app/src/main/java/com/example/mediaparser/MainActivity.java
+@@ -292,6 +292,7 @@
+         headers.put("Referer", "https://www.xiaohongshu.com/");
+         headers.put("User-Agent", com.example.mediaparser.net.HttpClient.DESKTOP_UA);
+         JSONArray media = obj.optJSONArray("media");
++        String mainVideoForAudio = "";
+         if (media != null) {
+             for (int i = 0; i < media.length(); i++) {
+                 JSONObject m = media.optJSONObject(i);
+@@ -299,10 +300,15 @@
+                 String url = m.optString("url", "");
+                 if (url.isBlank()) continue;
+                 String type = m.optString("type", "image");
++                String label = m.optString("label", "小红书媒体");
+                 MediaItem.Type mt = "video".equals(type) ? MediaItem.Type.VIDEO : ("audio".equals(type) ? MediaItem.Type.AUDIO : MediaItem.Type.IMAGE);
+-                b.add(new MediaItem(mt, m.optString("label", "小红书媒体"), url, headers));
++                b.add(new MediaItem(mt, label, url, headers));
++                if (mainVideoForAudio.isBlank() && mt == MediaItem.Type.VIDEO && !label.toLowerCase().contains("live") && !label.contains("实况") && !url.toLowerCase().contains(".m3u8")) {
++                    mainVideoForAudio = url;
++                }
+             }
+         }
++        if (!mainVideoForAudio.isBlank()) b.add(MediaItem.audioTrack("视频完整音轨 · M4A", mainVideoForAudio, headers));
+         ParseResult result = b.build();
+         if (!result.hasMedia()) throw new IllegalStateException("没有媒体地址");
+         return result;
+@@ -331,6 +337,12 @@
+             a.setPadding(0, dp(6), 0, 0);
+             info.addView(a);
+         }
++        String audioHint = audioHint(r.platform);
++        if (!audioHint.isBlank()) {
++            TextView ah = text(audioHint, 12, BLUE, false);
++            ah.setPadding(0, dp(7), 0, 0);
++            info.addView(ah);
++        }
+         if (!r.description.isBlank() && !r.description.equals(r.title)) {
+             TextView d = text(r.description, 14, MUTED, false);
+             d.setPadding(0, dp(8), 0, 0);
+@@ -357,8 +369,8 @@
+ 
+         TextView label = text(item.label + " · " + typeName(item.type), 16, TEXT, true);
+         card.addView(label);
+-        TextView url = text(item.url, 12, MUTED, false);
+-        url.setTextIsSelectable(true);
++        TextView url = text(item.extractsAudioTrack() ? "从视频中仅抽取原始音轨并封装为 M4A，不重新编码。" : item.url, 12, MUTED, false);
++        url.setTextIsSelectable(!item.extractsAudioTrack());
+         url.setMaxLines(3);
+         url.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+         url.setPadding(0, dp(7), 0, dp(8));
+@@ -366,9 +378,14 @@
+ 
+         LinearLayout actions = new LinearLayout(this);
+         actions.setOrientation(LinearLayout.HORIZONTAL);
+-        Button copy = secondaryButton("复制直链");
++        Button copy = secondaryButton(item.extractsAudioTrack() ? "复制视频源" : "复制直链");
+         copy.setOnClickListener(v -> copy(item.url));
+-        Button save = secondaryButton("保存");
++        String saveLabel;
++        if (item.extractsAudioTrack()) saveLabel = "提取 M4A";
++        else if (item.type == MediaItem.Type.AUDIO) saveLabel = "保存音频";
++        else if (item.type == MediaItem.Type.VIDEO) saveLabel = "保存视频";
++        else saveLabel = "保存图片";
++        Button save = secondaryButton(saveLabel);
+         save.setOnClickListener(v -> saveOne(item, currentResult == null ? "media" : currentResult.title));
+         actions.addView(copy, new LinearLayout.LayoutParams(0, dp(44), 1f));
+         LinearLayout.LayoutParams sv = new LinearLayout.LayoutParams(0, dp(44), 1f);
+@@ -395,11 +412,11 @@
+     }
+ 
+     private void saveOne(MediaItem item, String title) {
+-        status.setText("正在保存 " + item.label + "…");
++        status.setText(item.extractsAudioTrack() ? "正在下载视频并无损提取音轨…" : "正在保存 " + item.label + "…");
+         executor.execute(() -> {
+             try {
+                 String where = FileSaver.save(this, item, title);
+-                main.post(() -> status.setText("已保存 " + item.label + " 到系统相册/媒体库"));
++                main.post(() -> status.setText(item.extractsAudioTrack() ? "音轨已提取为 M4A，并保存到系统音乐库" : "已保存 " + item.label + " 到系统相册/媒体库"));
+             } catch (Exception e) {
+                 main.post(() -> status.setText("保存失败：" + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage())));
+             }
+@@ -491,6 +508,19 @@
+         }
+     }
+ 
++
++    private String audioHint(String platform) {
++        if (platform == null) return "";
++        switch (platform) {
++            case "抖音": return "音频策略：完整视频音轨 + 平台原声/配乐（若作品提供）";
++            case "B站": return "音频策略：优先最高码率独立 DASH 音频，不重新编码";
++            case "小红书": return "音频策略：视频完整音轨无损抽取为 M4A；图文/Live Photo 不强制生成音频";
++            case "快手": return "音频策略：从视频文件无损抽取完整音轨为 M4A";
++            case "微博": return "音频策略：从视频文件无损抽取完整音轨为 M4A";
++            default: return "";
++        }
++    }
++
+     private String typeName(MediaItem.Type t) {
+         if (t == MediaItem.Type.IMAGE) return "图片";
+         if (t == MediaItem.Type.AUDIO) return "音频";
