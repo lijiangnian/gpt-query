@@ -30,13 +30,14 @@ jobs:
         run: yes | sdkmanager --licenses >/dev/null && sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - name: Stage signing tools
         run: |
-          mkdir -p /tmp/android-sign-tools/lib
+          mkdir -p /tmp/android-sign-tools/lib /tmp/android-sign-tools/lib64
           cp "$ANDROID_HOME/build-tools/35.0.0/apksigner" /tmp/android-sign-tools/
           cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" /tmp/android-sign-tools/
           cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" /tmp/android-sign-tools/lib/
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib64/libc++.so" /tmp/android-sign-tools/lib64/
       - uses: actions/upload-artifact@v4
         with:
-          name: android-sign-tools-35-v13
+          name: android-sign-tools-35-v13-full
           path: /tmp/android-sign-tools
       - uses: gradle/actions/setup-gradle@v4
         with:
