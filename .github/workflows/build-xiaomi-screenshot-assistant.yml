@@ -1,4 +1,4 @@
-name: Build Xiaomi Screenshot Assistant AI APK
+name: Build Xiaomi Screenshot Assistant Private Placeholder APK
 
 on:
   push:
@@ -24,9 +24,39 @@ jobs:
           gzip -t /tmp/xiaomi-v11.tar.gz
           rm -rf xiaomi-screenshot-assistant-v1.1
           tar -xzf /tmp/xiaomi-v11.tar.gz
-      - name: Apply source compile fix
+      - name: Apply private placeholder source changes
         run: |
-          sed -i 's/textSize = 15f; singleLine = true; inputType =/textSize = 15f; setSingleLine(true); inputType =/' xiaomi-screenshot-assistant-v1.1/app/src/main/java/com/vsme/screenshotassistant/MainActivity.kt
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path('xiaomi-screenshot-assistant-v1.1')
+
+          # Fix compile issue and make the UI explicitly private/Groq-only.
+          p = root / 'app/src/main/java/com/vsme/screenshotassistant/MainActivity.kt'
+          s = p.read_text()
+          s = s.replace('textSize = 15f; singleLine = true; inputType =', 'textSize = 15f; setSingleLine(true); inputType =')
+          s = s.replace('建议先点上面的 AI 原位翻译设置免费 API Key。\n之后截图分享即可使用。', 'Xiaomi 13 私人版已内置 Groq 凭证。\n截图分享后可直接 AI 翻译，无需再填写 Key。')
+          s = s.replace('"${provider.displayName} · ${SecureStore.maskedKey(this)}\nAI 完整翻译后直接覆盖原文字位置。"', '"Groq 私人版 · ${SecureStore.maskedKey(this)}\nAI 完整翻译后直接覆盖原文字位置。"')
+          s = s.replace('routerBtn = TextView(this).apply { text="OpenRouter 免费"; textSize=15f; typeface=Typeface.DEFAULT_BOLD; gravity=Gravity.CENTER; setOnClickListener { provider=AiProvider.OPENROUTER; refreshProviderButtons() } }', 'routerBtn = TextView(this).apply { text="OpenRouter（关闭）"; textSize=15f; typeface=Typeface.DEFAULT_BOLD; gravity=Gravity.CENTER; isEnabled=false; alpha=.45f }')
+          s = s.replace('setText(SecureStore.loadKey(this@MainActivity)); textSize = 15f;', 'setText(SecureStore.loadKey(this@MainActivity)); isEnabled=false; textSize = 15f;')
+          p.write_text(s)
+
+          # Hard-code only a non-secret same-length placeholder in the public build.
+          p = root / 'app/src/main/java/com/vsme/screenshotassistant/SecureStore.kt'
+          p.write_text('''package com.vsme.screenshotassistant\n\nimport android.content.Context\n\nobject SecureStore {\n    // 56-byte non-secret placeholder. The final private APK is patched locally after CI.\n    private const val BUILT_IN_KEY = "gsk_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"\n\n    fun save(context: Context, provider: AiProvider, apiKey: String) {\n        // Private Xiaomi 13 build: credentials are not editable.\n    }\n\n    fun loadProvider(context: Context): AiProvider = AiProvider.GROQ\n\n    fun loadKey(context: Context): String = BUILT_IN_KEY\n\n    fun maskedKey(context: Context): String = "私人内置"\n}\n''')
+
+          # Defensive validation so bad pasted text/newlines can never enter Authorization again.
+          p = root / 'app/src/main/java/com/vsme/screenshotassistant/AiTranslationEngine.kt'
+          s = p.read_text()
+          s = s.replace('require(apiKey.isNotBlank()) { "请先填写 AI API Key" }', '''require(apiKey.isNotBlank()) { "AI 凭证不可用" }\n        val cleanKey = apiKey.trim().replace("\\r", "").replace("\\n", "")\n        require(cleanKey.startsWith("gsk_") && cleanKey.none { it.isWhitespace() }) { "Groq 凭证格式异常" }''')
+          s = s.replace('setRequestProperty("Authorization", "Bearer $apiKey")', 'setRequestProperty("Authorization", "Bearer $cleanKey")')
+          p.write_text(s)
+
+          # Version bump.
+          p = root / 'app/build.gradle.kts'
+          s = p.read_text().replace('versionCode = 2', 'versionCode = 3').replace('versionName = "1.1.0"', 'versionName = "1.2.0-private"')
+          p.write_text(s)
+          PY
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -42,5 +72,5 @@ jobs:
         run: gradle --no-daemon assembleRelease
       - uses: actions/upload-artifact@v4
         with:
-          name: xiaomi-screenshot-assistant-v1.1-ai-arm64
+          name: xiaomi-screenshot-assistant-v1.2-private-placeholder-arm64
           path: xiaomi-screenshot-assistant-v1.1/app/build/outputs/apk/release/app-release.apk
