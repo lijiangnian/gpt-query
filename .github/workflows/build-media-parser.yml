@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - media-parser-app-build-20260828
+    paths:
+      - 'media-parser-build/TRIGGER'
   workflow_dispatch:
 
 permissions:
