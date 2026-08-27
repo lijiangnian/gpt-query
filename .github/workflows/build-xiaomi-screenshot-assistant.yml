@@ -28,10 +28,7 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
           root = Path('xiaomi-screenshot-assistant-v1.1')
-
-          # Fix compile issue and make the UI explicitly private/Groq-only.
           p = root / 'app/src/main/java/com/vsme/screenshotassistant/MainActivity.kt'
           s = p.read_text()
           s = s.replace('textSize = 15f; singleLine = true; inputType =', 'textSize = 15f; setSingleLine(true); inputType =')
@@ -40,19 +37,13 @@ jobs:
           s = s.replace('routerBtn = TextView(this).apply { text="OpenRouter 免费"; textSize=15f; typeface=Typeface.DEFAULT_BOLD; gravity=Gravity.CENTER; setOnClickListener { provider=AiProvider.OPENROUTER; refreshProviderButtons() } }', 'routerBtn = TextView(this).apply { text="OpenRouter（关闭）"; textSize=15f; typeface=Typeface.DEFAULT_BOLD; gravity=Gravity.CENTER; isEnabled=false; alpha=.45f }')
           s = s.replace('setText(SecureStore.loadKey(this@MainActivity)); textSize = 15f;', 'setText(SecureStore.loadKey(this@MainActivity)); isEnabled=false; textSize = 15f;')
           p.write_text(s)
-
-          # Hard-code only a non-secret same-length placeholder in the public build.
           p = root / 'app/src/main/java/com/vsme/screenshotassistant/SecureStore.kt'
-          p.write_text('''package com.vsme.screenshotassistant\n\nimport android.content.Context\n\nobject SecureStore {\n    // 56-byte non-secret placeholder. The final private APK is patched locally after CI.\n    private const val BUILT_IN_KEY = "gsk_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"\n\n    fun save(context: Context, provider: AiProvider, apiKey: String) {\n        // Private Xiaomi 13 build: credentials are not editable.\n    }\n\n    fun loadProvider(context: Context): AiProvider = AiProvider.GROQ\n\n    fun loadKey(context: Context): String = BUILT_IN_KEY\n\n    fun maskedKey(context: Context): String = "私人内置"\n}\n''')
-
-          # Defensive validation so bad pasted text/newlines can never enter Authorization again.
+          p.write_text('''package com.vsme.screenshotassistant\n\nimport android.content.Context\n\nobject SecureStore {\n    private const val BUILT_IN_KEY = "gsk_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"\n    fun save(context: Context, provider: AiProvider, apiKey: String) {}\n    fun loadProvider(context: Context): AiProvider = AiProvider.GROQ\n    fun loadKey(context: Context): String = BUILT_IN_KEY\n    fun maskedKey(context: Context): String = "私人内置"\n}\n''')
           p = root / 'app/src/main/java/com/vsme/screenshotassistant/AiTranslationEngine.kt'
           s = p.read_text()
-          s = s.replace('require(apiKey.isNotBlank()) { "请先填写 AI API Key" }', '''require(apiKey.isNotBlank()) { "AI 凭证不可用" }\n        val cleanKey = apiKey.trim().replace("\\r", "").replace("\\n", "")\n        require(cleanKey.startsWith("gsk_") && cleanKey.none { it.isWhitespace() }) { "Groq 凭证格式异常" }''')
+          s = s.replace('require(apiKey.isNotBlank()) { "请先填写 AI API Key" }', 'require(apiKey.isNotBlank()) { "AI 凭证不可用" }\n        val cleanKey = apiKey.trim().replace("\\r", "").replace("\\n", "")\n        require(cleanKey.startsWith("gsk_") && cleanKey.none { it.isWhitespace() }) { "Groq 凭证格式异常" }')
           s = s.replace('setRequestProperty("Authorization", "Bearer $apiKey")', 'setRequestProperty("Authorization", "Bearer $cleanKey")')
           p.write_text(s)
-
-          # Version bump.
           p = root / 'app/build.gradle.kts'
           s = p.read_text().replace('versionCode = 2', 'versionCode = 3').replace('versionName = "1.1.0"', 'versionName = "1.2.0-private"')
           p.write_text(s)
@@ -64,6 +55,16 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install Android SDK
         run: yes | sdkmanager --licenses >/dev/null && sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Stage signing tools
+        run: |
+          mkdir -p /tmp/android-sign-tools/lib
+          cp "$ANDROID_HOME/build-tools/35.0.0/apksigner" /tmp/android-sign-tools/
+          cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" /tmp/android-sign-tools/
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" /tmp/android-sign-tools/lib/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-sign-tools-35
+          path: /tmp/android-sign-tools
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
