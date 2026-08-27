@@ -23,14 +23,17 @@ public class LiveParserMain {
         };
         ParserRegistry registry = new ParserRegistry();
         int parsePass = 0;
-        int mediaProbePass = 0;
+        int audioPresent = 0;
+        int directAudioProbePass = 0;
         for (Case c : cases) {
             long start = System.currentTimeMillis();
             try {
                 ParseResult r = registry.parseText(c.url);
                 boolean parsed = r != null && r.hasMedia();
                 if (parsed) parsePass++;
-                int good = 0;
+                int audioCount = 0;
+                int directAudioGood = 0;
+                int directAudioTotal = 0;
                 System.out.printf("LIVE %s PARSE=%s platform=%s title=%s media=%d ms=%d%n",
                         c.name, parsed ? "PASS" : "FAIL", r == null ? "" : r.platform,
                         r == null ? "" : oneLine(r.title), r == null ? 0 : r.media.size(),
@@ -39,20 +42,29 @@ public class LiveParserMain {
                     int idx = 0;
                     for (MediaItem item : r.media) {
                         idx++;
+                        boolean isAudio = item.type == MediaItem.Type.AUDIO;
+                        if (isAudio) audioCount++;
                         int status = probe(item);
                         boolean ok = status >= 200 && status < 400;
-                        if (ok) good++;
-                        System.out.printf("  MEDIA %d %s %s HTTP=%d URL=%s%n", idx, item.type,
+                        if (isAudio && item.saveMode == MediaItem.SaveMode.DIRECT) {
+                            directAudioTotal++;
+                            if (ok) directAudioGood++;
+                        }
+                        System.out.printf("  MEDIA %d %s mode=%s ext=%s mime=%s %s HTTP=%d URL=%s%n",
+                                idx, item.type, item.saveMode, item.preferredExtension, item.mimeType,
                                 ok ? "PASS" : "FAIL", status, shorten(item.url));
                     }
-                    if (!r.media.isEmpty() && good == r.media.size()) mediaProbePass++;
                 }
+                if (audioCount > 0) audioPresent++;
+                if (directAudioTotal > 0 && directAudioGood == directAudioTotal) directAudioProbePass++;
+                System.out.printf("  AUDIO count=%d direct=%d directPass=%d%n", audioCount, directAudioTotal, directAudioGood);
             } catch (Throwable t) {
                 System.out.printf("LIVE %s PARSE=FAIL ms=%d error=%s%n", c.name,
                         System.currentTimeMillis() - start, oneLine(t.toString()));
             }
         }
-        System.out.printf("SUMMARY parse=%d/%d mediaProbeAll=%d/%d%n", parsePass, cases.length, mediaProbePass, cases.length);
+        System.out.printf("SUMMARY parse=%d/%d audioPresent=%d/%d directAudioProbePlatforms=%d%n",
+                parsePass, cases.length, audioPresent, cases.length, directAudioProbePass);
         if (parsePass < 2) System.exit(2);
     }
 
