@@ -1,0 +1,100 @@
+--- a/app/src/main/java/com/example/mediaparser/MainActivity.java
++++ b/app/src/main/java/com/example/mediaparser/MainActivity.java
+@@ -32,10 +32,17 @@
+ import com.example.mediaparser.parser.ParserRegistry;
+ import com.example.mediaparser.util.FileSaver;
+ 
++import org.json.JSONArray;
++import org.json.JSONObject;
++
++import java.util.LinkedHashMap;
++import java.util.Map;
++
+ import java.util.concurrent.ExecutorService;
+ import java.util.concurrent.Executors;
+ 
+ public final class MainActivity extends Activity {
++    private static final int REQ_XHS_WEB = 4102;
+     private static final int BLUE = Color.rgb(39, 100, 231);
+     private static final int TEXT = Color.rgb(23, 27, 35);
+     private static final int MUTED = Color.rgb(103, 112, 126);
+@@ -229,13 +236,78 @@
+                 ParseResult result = registry.parseText(text);
+                 main.post(() -> showResult(result));
+             } catch (ParseException e) {
+-                main.post(() -> showError(e.getMessage()));
++                String platform = LinkExtractor.detectPlatform(text);
++                if ("xhs".equals(platform)) {
++                    main.post(() -> launchXhsFallback(text, e.getMessage()));
++                } else {
++                    main.post(() -> showError(e.getMessage()));
++                }
+             } catch (Throwable t) {
+                 main.post(() -> showError("解析异常：" + (t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage())));
+             }
+         });
+     }
+ 
++    private void launchXhsFallback(String text, String fastError) {
++        String extracted = LinkExtractor.extractFirstUrl(text);
++        if (extracted == null) {
++            showError(fastError == null ? "小红书快速解析失败" : fastError);
++            return;
++        }
++        parsing = false;
++        progress.setVisibility(View.GONE);
++        parseButton.setEnabled(true);
++        parseButton.setText("重新解析");
++        status.setText("快速解析没有拿到媒体，切换小红书浏览器兼容模式…");
++        Intent i = new Intent(this, XhsWebViewActivity.class);
++        i.putExtra(XhsWebViewActivity.EXTRA_URL, LinkExtractor.ensureScheme(extracted));
++        startActivityForResult(i, REQ_XHS_WEB);
++    }
++
++    @Override
++    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
++        super.onActivityResult(requestCode, resultCode, data);
++        if (requestCode != REQ_XHS_WEB) return;
++        if (resultCode != RESULT_OK || data == null) {
++            showError("小红书浏览器兼容解析未完成。可重新解析后在页面中完成验证/登录再提取。");
++            return;
++        }
++        String raw = data.getStringExtra(XhsWebViewActivity.EXTRA_RESULT_JSON);
++        try {
++            showResult(parseXhsWebResult(raw));
++        } catch (Exception e) {
++            showError("小红书浏览器解析结果无效：" + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
++        }
++    }
++
++    private ParseResult parseXhsWebResult(String raw) throws Exception {
++        JSONObject obj = new JSONObject(raw == null ? "{}" : raw);
++        String sourceUrl = obj.optString("sourceUrl", "");
++        ParseResult.Builder b = ParseResult.builder("小红书", sourceUrl)
++                .title(obj.optString("title", ""))
++                .author(obj.optString("author", ""))
++                .description(obj.optString("description", ""))
++                .coverUrl(obj.optString("coverUrl", ""));
++        Map<String, String> headers = new LinkedHashMap<>();
++        headers.put("Referer", "https://www.xiaohongshu.com/");
++        headers.put("User-Agent", com.example.mediaparser.net.HttpClient.DESKTOP_UA);
++        JSONArray media = obj.optJSONArray("media");
++        if (media != null) {
++            for (int i = 0; i < media.length(); i++) {
++                JSONObject m = media.optJSONObject(i);
++                if (m == null) continue;
++                String url = m.optString("url", "");
++                if (url.isBlank()) continue;
++                String type = m.optString("type", "image");
++                MediaItem.Type mt = "video".equals(type) ? MediaItem.Type.VIDEO : ("audio".equals(type) ? MediaItem.Type.AUDIO : MediaItem.Type.IMAGE);
++                b.add(new MediaItem(mt, m.optString("label", "小红书媒体"), url, headers));
++            }
++        }
++        ParseResult result = b.build();
++        if (!result.hasMedia()) throw new IllegalStateException("没有媒体地址");
++        return result;
++    }
++
+     private void showResult(ParseResult r) {
+         parsing = false;
+         currentResult = r;
