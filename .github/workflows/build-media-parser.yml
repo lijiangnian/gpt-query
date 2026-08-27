@@ -64,3 +64,33 @@ jobs:
           path: MediaParserApp/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
+
+      - name: Download org.json for exact parser smoke
+        shell: bash
+        run: curl -fsSL --retry 3 -o json.jar https://repo1.maven.org/maven2/org/json/json/20240303/json-20240303.jar
+
+      - name: Compile exact parser sources
+        shell: bash
+        run: |
+          mkdir -p live-classes
+          javac -encoding UTF-8 -cp json.jar -d live-classes \
+            MediaParserApp/app/src/main/java/com/example/mediaparser/model/*.java \
+            MediaParserApp/app/src/main/java/com/example/mediaparser/core/*.java \
+            MediaParserApp/app/src/main/java/com/example/mediaparser/net/*.java \
+            MediaParserApp/app/src/main/java/com/example/mediaparser/parser/*.java \
+            MediaParserApp/app/src/main/java/com/example/mediaparser/util/JsonUtil.java \
+            media-parser-build/LiveParserMain.java
+
+      - name: Run five-platform live smoke
+        continue-on-error: true
+        shell: bash
+        run: java -cp live-classes:json.jar LiveParserMain | tee live-parser-results.txt
+
+      - name: Upload live parser results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MediaParser-live-results
+          path: live-parser-results.txt
+          if-no-files-found: warn
+          retention-days: 7
