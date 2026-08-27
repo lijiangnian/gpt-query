@@ -1,0 +1,89 @@
+--- a/app/src/main/java/com/example/mediaparser/MainActivity.java
++++ b/app/src/main/java/com/example/mediaparser/MainActivity.java
+@@ -8,9 +8,12 @@
+ import android.graphics.Color;
+ import android.graphics.Typeface;
+ import android.graphics.drawable.GradientDrawable;
++import android.net.Uri;
++import android.os.Build;
+ import android.os.Bundle;
+ import android.os.Handler;
+ import android.os.Looper;
++import android.provider.DocumentsContract;
+ import android.text.TextUtils;
+ import android.view.Gravity;
+ import android.view.View;
+@@ -378,16 +381,24 @@
+ 
+         LinearLayout actions = new LinearLayout(this);
+         actions.setOrientation(LinearLayout.HORIZONTAL);
+-        Button copy = secondaryButton(item.extractsAudioTrack() ? "复制视频源" : "复制直链");
+-        copy.setOnClickListener(v -> copy(item.url));
++
++        Button left;
++        if (item.extractsAudioTrack()) {
++            left = secondaryButton("打开文件夹");
++            left.setOnClickListener(v -> openAudioFolder());
++        } else {
++            left = secondaryButton("复制直链");
++            left.setOnClickListener(v -> copy(item.url));
++        }
++
+         String saveLabel;
+-        if (item.extractsAudioTrack()) saveLabel = "提取 M4A";
++        if (item.extractsAudioTrack()) saveLabel = "提取";
+         else if (item.type == MediaItem.Type.AUDIO) saveLabel = "保存音频";
+         else if (item.type == MediaItem.Type.VIDEO) saveLabel = "保存视频";
+         else saveLabel = "保存图片";
+         Button save = secondaryButton(saveLabel);
+         save.setOnClickListener(v -> saveOne(item, currentResult == null ? "media" : currentResult.title));
+-        actions.addView(copy, new LinearLayout.LayoutParams(0, dp(44), 1f));
++        actions.addView(left, new LinearLayout.LayoutParams(0, dp(44), 1f));
+         LinearLayout.LayoutParams sv = new LinearLayout.LayoutParams(0, dp(44), 1f);
+         sv.setMarginStart(dp(8));
+         actions.addView(save, sv);
+@@ -416,7 +427,9 @@
+         executor.execute(() -> {
+             try {
+                 String where = FileSaver.save(this, item, title);
+-                main.post(() -> status.setText(item.extractsAudioTrack() ? "音轨已提取为 M4A，并保存到系统音乐库" : "已保存 " + item.label + " 到系统相册/媒体库"));
++                main.post(() -> status.setText(item.extractsAudioTrack()
++                        ? "音频已提取：内部存储/Music/MediaParser"
++                        : "已保存 " + item.label + " 到系统相册/媒体库"));
+             } catch (Exception e) {
+                 main.post(() -> status.setText("保存失败：" + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage())));
+             }
+@@ -490,6 +503,33 @@
+         return d;
+     }
+ 
++
++    private void openAudioFolder() {
++        Uri folderUri = DocumentsContract.buildDocumentUri(
++                "com.android.externalstorage.documents",
++                "primary:Music/MediaParser"
++        );
++        try {
++            Intent view = new Intent(Intent.ACTION_VIEW);
++            view.setDataAndType(folderUri, DocumentsContract.Document.MIME_TYPE_DIR);
++            view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
++            startActivity(view);
++            return;
++        } catch (Exception ignored) {
++        }
++
++        try {
++            Intent tree = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
++            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
++                tree.putExtra("android.provider.extra.INITIAL_URI", folderUri);
++            }
++            startActivity(tree);
++            toast("音频目录：Music/MediaParser");
++        } catch (Exception e) {
++            toast("请在文件管理中打开：Music/MediaParser");
++        }
++    }
++
+     private void copy(String s) {
+         ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+         if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("media_url", s));
