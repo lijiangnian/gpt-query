@@ -69,9 +69,10 @@ jobs:
       - name: Apply v0.1.9 compact settings and Key validation
         shell: bash
         run: |
-          base64 -d media-parser-build/v019.patch.b64 > /tmp/v019.patch
-          echo "0dd61444c7740a9cccb81b0b5ec5070041f602291cb5992309b2474c938d66b1  /tmp/v019.patch" | sha256sum -c -
-          patch -d MediaParserApp -p1 < /tmp/v019.patch
+          cat media-parser-build/v019overlay/chunk00.b64 media-parser-build/v019overlay/chunk01.b64 media-parser-build/v019overlay/chunk02.b64 > /tmp/v019overlay.b64
+          base64 -d /tmp/v019overlay.b64 > /tmp/v019overlay.zip
+          echo "c57ab9f109155946b0ce725e7e50c4d5a858ab91b4f40b436d8578fb6f0fc40c  /tmp/v019overlay.zip" | sha256sum -c -
+          unzip -qo /tmp/v019overlay.zip -d MediaParserApp
           grep -q "versionName '0.1.9'" MediaParserApp/app/build.gradle
           grep -q 'GeminiKeyValidator' MediaParserApp/app/src/main/java/com/example/mediaparser/MainActivity.java
           grep -q '保存并验证' MediaParserApp/app/src/main/java/com/example/mediaparser/MainActivity.java
