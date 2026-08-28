@@ -1,0 +1,22 @@
+threads=%d language=%s", (int) n_samples, params.n_threads, language);
+     const int rc = whisper_full(context, params, audio, n_samples);
++    if (rc == 0) g_transcribe_progress = 100;
+ 
+     if (language_str != NULL) (*env)->ReleaseStringUTFChars(env, language_str, language);
+     (*env)->ReleaseFloatArrayElements(env, audio_data, audio, JNI_ABORT);
+@@ -65,6 +81,15 @@
+     return rc;
+ }
+ 
++
++JNIEXPORT jint JNICALL
++Java_com_example_mediaparser_subtitle_WhisperLib_getTranscribeProgress(
++        JNIEnv * env, jclass clazz) {
++    (void) env;
++    (void) clazz;
++    return (jint) g_transcribe_progress;
++}
++
+ JNIEXPORT jint JNICALL
+ Java_com_example_mediaparser_subtitle_WhisperLib_getTextSegmentCount(
+         JNIEnv * env, jclass clazz, jlong context_ptr) {
