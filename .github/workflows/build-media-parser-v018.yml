@@ -1,0 +1,143 @@
+name: Build MediaParser v0.1.8
+
+on:
+  push:
+    branches: [media-parser-app-build-20260828]
+    paths: ['.github/workflows/build-media-parser-v018.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct app through v0.1.7
+        shell: bash
+        run: |
+          cat media-parser-build/chunk00.b64 media-parser-build/chunk01.b64 media-parser-build/chunk02.b64 media-parser-build/chunk03.b64 > MediaParserApp-source.zip.b64
+          base64 -d MediaParserApp-source.zip.b64 > MediaParserApp-source.zip
+          echo "c3dcc628ea60dad0bc80c305af500a9c374bd0e3e3077be716bf1d8dc35c91aa  MediaParserApp-source.zip" | sha256sum -c -
+          unzip -q MediaParserApp-source.zip
+          cp media-parser-build/patches/KuaishouParser.java MediaParserApp/app/src/main/java/com/example/mediaparser/parser/KuaishouParser.java
+          cp media-parser-build/patches-v012/XhsParser.java MediaParserApp/app/src/main/java/com/example/mediaparser/parser/XhsParser.java
+          cp media-parser-build/patches-v012/XhsWebViewActivity.java MediaParserApp/app/src/main/java/com/example/mediaparser/XhsWebViewActivity.java
+          cp media-parser-build/patches-v012/AndroidManifest.xml MediaParserApp/app/src/main/AndroidManifest.xml
+          patch -d MediaParserApp -p1 < media-parser-build/patches-v012/MainActivity.patch
+          sed -Ei 's/versionCode [0-9]+/versionCode 3/' MediaParserApp/app/build.gradle
+          sed -Ei "s/versionName '[^']+'/versionName '0.1.2'/" MediaParserApp/app/build.gradle
+          cp media-parser-build/v013files/build.gradle MediaParserApp/app/build.gradle
+          cp media-parser-build/v013files/MediaItem.java MediaParserApp/app/src/main/java/com/example/mediaparser/model/MediaItem.java
+          cp media-parser-build/v013files/FileSaver.java MediaParserApp/app/src/main/java/com/example/mediaparser/util/FileSaver.java
+          cp media-parser-build/v013files/DouyinParser.java MediaParserApp/app/src/main/java/com/example/mediaparser/parser/DouyinParser.java
+          cp media-parser-build/v013files/BilibiliParser.java MediaParserApp/app/src/main/java/com/example/mediaparser/parser/BilibiliParser.java
+          cp media-parser-build/v013files/KuaishouParser.java MediaParserApp/app/src/main/java/com/example/mediaparser/parser/KuaishouParser.java
+          cp media-parser-build/v013files/XhsParser.java MediaParserApp/app/src/main/java/com/example/mediaparser/parser/XhsParser.java
+          cp media-parser-build/v013files/WeiboParser.java MediaParserApp/app/src/main/java/com/example/mediaparser/parser/WeiboParser.java
+          patch -d MediaParserApp -p1 < media-parser-build/v013files/MainActivity.patch
+          patch -d MediaParserApp -p1 < media-parser-build/v014/MainActivity.patch
+          sed -Ei 's/versionCode [0-9]+/versionCode 5/' MediaParserApp/app/build.gradle
+          sed -Ei "s/versionName '[^']+'/versionName '0.1.4'/" MediaParserApp/app/build.gradle
+          cat media-parser-build/v015patch/chunk00.patch media-parser-build/v015patch/chunk01.patch > /tmp/v015.patch
+          patch -d MediaParserApp -p1 < /tmp/v015.patch
+          cat media-parser-build/v016/chunk00.patch media-parser-build/v016/chunk01.patch media-parser-build/v016/chunk02.patch media-parser-build/v016/chunk03.patch media-parser-build/v016/chunk04.patch media-parser-build/v016/chunk05.patch media-parser-build/v016/chunk06.patch > /tmp/v016-all.patch
+          awk '/^diff --git / {skip = ($3 == "a/README.md" || $3 == "a/.github/workflows/build-apk.yml")} !skip {print}' /tmp/v016-all.patch > /tmp/v016-code.patch
+          patch -d MediaParserApp -p1 < /tmp/v016-code.patch
+          patch -d MediaParserApp -p1 < media-parser-build/v016fix1.patch
+          cat media-parser-build/v017/chunk00.patch media-parser-build/v017/chunk01.patch media-parser-build/v017/chunk02.patch > /tmp/v017.patch
+          patch -d MediaParserApp -p1 < /tmp/v017.patch
+          grep -q "versionName '0.1.7'" MediaParserApp/app/build.gradle
+
+      - name: Apply v0.1.8 Gemini cloud subtitle overlay
+        shell: bash
+        run: |
+          cat media-parser-build/v018overlay/chunk00.b64 media-parser-build/v018overlay/chunk01.b64 media-parser-build/v018overlay/chunk02.b64 media-parser-build/v018overlay/chunk03.b64 media-parser-build/v018overlay/chunk04.b64 media-parser-build/v018overlay/chunk05.b64 > /tmp/v018overlay.b64
+          base64 -d /tmp/v018overlay.b64 > /tmp/v018overlay.zip
+          echo "da54c2825ce77a87237f5a987e36ed37760921b96410c8ab1d9a0eff4212a0f5  /tmp/v018overlay.zip" | sha256sum -c -
+          unzip -qo /tmp/v018overlay.zip -d MediaParserApp
+          rm -f MediaParserApp/app/src/main/java/com/example/mediaparser/subtitle/AudioDecoder.java
+          rm -f MediaParserApp/app/src/main/java/com/example/mediaparser/subtitle/WhisperLib.java
+          rm -f MediaParserApp/app/src/main/java/com/example/mediaparser/subtitle/WhisperModelManager.java
+          rm -rf MediaParserApp/app/src/main/jni
+          grep -q "versionName '0.1.8'" MediaParserApp/app/build.gradle
+          grep -q 'gemini-3.5-transcribe' MediaParserApp/app/src/main/java/com/example/mediaparser/subtitle/SubtitleExtractor.java
+          grep -q '/v1beta/interactions' MediaParserApp/app/src/main/java/com/example/mediaparser/subtitle/SubtitleExtractor.java
+          grep -q 'timestamp_granularities' MediaParserApp/app/src/main/java/com/example/mediaparser/subtitle/SubtitleExtractor.java
+          grep -q 'AndroidKeyStore' MediaParserApp/app/src/main/java/com/example/mediaparser/subtitle/GeminiKeyStore.java
+          grep -q 'Gemini 云端字幕' MediaParserApp/app/src/main/java/com/example/mediaparser/MainActivity.java
+          grep -q '实际 RPM / TPM / RPD 以 AI Studio 当前项目额度为准' MediaParserApp/app/src/main/java/com/example/mediaparser/MainActivity.java
+          ! grep -R -q 'WhisperModelManager\|ggml-small-q5_1\|System.loadLibrary("whisper")' MediaParserApp/app/src/main MediaParserApp/app/build.gradle
+          ! grep -q 'externalNativeBuild' MediaParserApp/app/build.gradle
+          test ! -d MediaParserApp/app/src/main/jni
+          test "$(grep -c '<uses-permission' MediaParserApp/app/src/main/AndroidManifest.xml)" -eq 1
+          grep -q 'android.permission.INTERNET' MediaParserApp/app/src/main/AndroidManifest.xml
+          ! grep -q 'WRITE_EXTERNAL_STORAGE\|READ_MEDIA\|POST_NOTIFICATIONS' MediaParserApp/app/src/main/AndroidManifest.xml
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build APK
+        working-directory: MediaParserApp
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Verify pure cloud APK
+        shell: bash
+        run: |
+          APK=MediaParserApp/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          ! unzip -l "$APK" | grep -q 'libwhisper\|libggml'
+          ! unzip -l "$APK" | grep -q 'ggml-small\|whisper.*bin'
+          sha256sum "$APK"
+          ls -lh "$APK"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MediaParser-v0.1.8-debug
+          path: MediaParserApp/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+
+      - name: Parser regression smoke
+        shell: bash
+        run: |
+          curl -fsSL --retry 3 -o json.jar https://repo1.maven.org/maven2/org/json/json/20240303/json-20240303.jar
+          mkdir -p live-classes
+          javac -encoding UTF-8 -cp json.jar -d live-classes MediaParserApp/app/src/main/java/com/example/mediaparser/model/*.java MediaParserApp/app/src/main/java/com/example/mediaparser/core/*.java MediaParserApp/app/src/main/java/com/example/mediaparser/net/*.java MediaParserApp/app/src/main/java/com/example/mediaparser/parser/*.java MediaParserApp/app/src/main/java/com/example/mediaparser/util/JsonUtil.java media-parser-build/LiveParserMain.java
+          java -cp live-classes:json.jar LiveParserMain | tee live-parser-results.txt
+
+      - name: Package source
+        shell: bash
+        run: |
+          rm -rf MediaParserApp/app/build MediaParserApp/.gradle
+          zip -qr MediaParserApp-v0.1.8-source.zip MediaParserApp
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MediaParser-v0.1.8-live-results
+          path: live-parser-results.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MediaParser-v0.1.8-source
+          path: MediaParserApp-v0.1.8-source.zip
+          retention-days: 7
