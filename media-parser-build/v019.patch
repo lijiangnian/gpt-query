@@ -1,0 +1,379 @@
+diff -ruN MediaParserApp-v018/app/build.gradle MediaParserApp/app/build.gradle
+--- MediaParserApp-v018/app/build.gradle	2026-08-28 11:57:37.000000000 +0000
++++ MediaParserApp/app/build.gradle	2026-08-28 12:29:19.260331282 +0000
+@@ -10,8 +10,8 @@
+         applicationId 'com.example.mediaparser'
+         minSdk 29
+         targetSdk 35
+-        versionCode 9
+-        versionName '0.1.8'
++        versionCode 10
++        versionName '0.1.9'
+     }
+ 
+     buildTypes {
+diff -ruN MediaParserApp-v018/app/src/main/java/com/example/mediaparser/MainActivity.java MediaParserApp/app/src/main/java/com/example/mediaparser/MainActivity.java
+--- MediaParserApp-v018/app/src/main/java/com/example/mediaparser/MainActivity.java	2026-08-28 11:57:37.000000000 +0000
++++ MediaParserApp/app/src/main/java/com/example/mediaparser/MainActivity.java	2026-08-28 12:29:47.512150604 +0000
+@@ -40,6 +40,7 @@
+ import com.example.mediaparser.subtitle.SubtitleExtractor;
+ import com.example.mediaparser.subtitle.SubtitleOutput;
+ import com.example.mediaparser.subtitle.GeminiKeyStore;
++import com.example.mediaparser.subtitle.GeminiKeyValidator;
+ 
+ import org.json.JSONArray;
+ import org.json.JSONObject;
+@@ -70,6 +71,11 @@
+     private ParseResult currentResult;
+     private EditText geminiKeyInput;
+     private TextView geminiKeyStatus;
++    private TextView geminiCompactStatus;
++    private LinearLayout geminiSettingsBody;
++    private Button geminiSettingsToggle;
++    private boolean geminiSettingsExpanded;
++    private boolean geminiKeyValidating;
+     private boolean parsing;
+     private boolean subtitleBusy;
+     private View subtitleResultPanel;
+@@ -527,7 +533,7 @@
+         if (apiKey.isBlank()) {
+             subtitleState.setText("请先在页面上方设置 Gemini API Key");
+             status.setText("还没有 Gemini API Key。请在页面上方获取并保存 Key。");
+-            geminiKeyInput.requestFocus();
++            setGeminiSettingsExpanded(true, true);
+             toast("先设置 Gemini API Key");
+             return;
+         }
+@@ -776,89 +782,189 @@
+ 
+     private LinearLayout buildGeminiCard() {
+         LinearLayout card = panel();
+-        card.addView(text("Gemini 云端字幕", 17, TEXT, true));
++        card.setPadding(dp(12), dp(10), dp(12), dp(10));
+ 
+-        TextView explain = text("获取 Key：Google AI Studio → Get API key → Create API key → 复制到下方。Key 只加密保存在本机，不会写进 APK。", 12, MUTED, false);
+-        explain.setPadding(0, dp(7), 0, dp(6));
+-        card.addView(explain);
++        LinearLayout compact = new LinearLayout(this);
++        compact.setOrientation(LinearLayout.HORIZONTAL);
++        compact.setGravity(Gravity.CENTER_VERTICAL);
++        geminiCompactStatus = text("", 13, TEXT, true);
++        compact.addView(geminiCompactStatus, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
++        geminiSettingsToggle = secondaryButton("设置");
++        geminiSettingsToggle.setOnClickListener(v -> setGeminiSettingsExpanded(!geminiSettingsExpanded, false));
++        compact.addView(geminiSettingsToggle, new LinearLayout.LayoutParams(dp(84), dp(40)));
++        card.addView(compact);
+ 
+-        TextView free = text("免费层：Gemini 3.5 Transcribe 当前输入和输出均免费；实际 RPM / TPM / RPD 以 AI Studio 当前项目额度为准，Google 可能调整。免费层提交内容可能用于改进 Google 产品。Google AI Plus / Pro 会员与 Developer API 配额分开。", 12, BLUE, false);
++        geminiSettingsBody = new LinearLayout(this);
++        geminiSettingsBody.setOrientation(LinearLayout.VERTICAL);
++        geminiSettingsBody.setVisibility(View.GONE);
++
++        TextView explain = text("获取 Key：Google AI Studio → Get API key → Create API key。保存时会自动验证 Key 是否可用，不上传视频或音频。", 12, MUTED, false);
++        explain.setPadding(0, dp(10), 0, dp(6));
++        geminiSettingsBody.addView(explain);
++
++        TextView free = text("免费层：Gemini 3.5 Transcribe 当前输入和输出可使用 Free Tier；具体 RPM / TPM / RPD 及 Free / Paid 层级以 Key 所属 AI Studio 项目为准。App 能验证 Key 和模型是否可用，但不能仅凭 Key 判断项目是否已绑定付费账单。", 12, BLUE, false);
+         free.setPadding(0, 0, 0, dp(8));
+-        card.addView(free);
++        geminiSettingsBody.addView(free);
+ 
+         geminiKeyStatus = text("", 12, MUTED, false);
+         geminiKeyStatus.setPadding(0, 0, 0, dp(7));
+-        card.addView(geminiKeyStatus);
++        geminiSettingsBody.addView(geminiKeyStatus);
+ 
+         geminiKeyInput = new EditText(this);
+         geminiKeyInput.setSingleLine(true);
+@@ -871,7 +977,7 @@
+         geminiKeyInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+         geminiKeyInput.setPadding(dp(12), dp(10), dp(12), dp(10));
+         geminiKeyInput.setBackground(roundRect(Color.WHITE, dp(10), BORDER, 1));
+-        card.addView(geminiKeyInput, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)));
++        geminiSettingsBody.addView(geminiKeyInput, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)));
+ 
+         LinearLayout links = new LinearLayout(this);
+         links.setOrientation(LinearLayout.HORIZONTAL);
+@@ -879,7 +985,7 @@
+         Button getKey = secondaryButton("获取 Key");
+         getKey.setOnClickListener(v -> openExternalUrl("https://aistudio.google.com/app/apikey"));
+-        Button quota = secondaryButton("查看额度");
++        Button quota = secondaryButton("查看额度/层级");
+         quota.setOnClickListener(v -> openExternalUrl("https://aistudio.google.com/rate-limit?timeRange=last-28-days"));
+         links.addView(getKey, new LinearLayout.LayoutParams(0, dp(42), 1f));
+         LinearLayout.LayoutParams qlp = new LinearLayout.LayoutParams(0, dp(42), 1f);
+@@ -887,50 +993,144 @@
+         links.addView(quota, qlp);
+         LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+         llp.topMargin = dp(8);
+-        card.addView(links, llp);
++        geminiSettingsBody.addView(links, llp);
+ 
+         LinearLayout actions = new LinearLayout(this);
+         actions.setOrientation(LinearLayout.HORIZONTAL);
+         Button clearKey = secondaryButton("清除");
+         clearKey.setOnClickListener(v -> {
+             GeminiKeyStore.clear(this);
++            getSharedPreferences("gemini_key_meta", MODE_PRIVATE).edit().clear().apply();
+             geminiKeyInput.setText("");
+             updateGeminiKeyStatus();
+             if (currentResult != null) showResult(currentResult);
+         });
+-        Button saveKey = primaryButton("保存 Key");
+-        saveKey.setOnClickListener(v -> saveGeminiKey());
++        Button testKey = secondaryButton("测试当前 Key");
++        testKey.setOnClickListener(v -> validateStoredGeminiKey(testKey));
++        Button saveKey = primaryButton("保存并验证");
++        saveKey.setOnClickListener(v -> saveGeminiKey(saveKey));
+         actions.addView(clearKey, new LinearLayout.LayoutParams(0, dp(44), 1f));
+-        LinearLayout.LayoutParams skp = new LinearLayout.LayoutParams(0, dp(44), 2f);
++        LinearLayout.LayoutParams tkp = new LinearLayout.LayoutParams(0, dp(44), 1.2f);
++        tkp.setMarginStart(dp(8));
++        actions.addView(testKey, tkp);
++        LinearLayout.LayoutParams skp = new LinearLayout.LayoutParams(0, dp(44), 1.6f);
+         skp.setMarginStart(dp(8));
+         actions.addView(saveKey, skp);
+         LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+         alp.topMargin = dp(8);
+-        card.addView(actions, alp);
++        geminiSettingsBody.addView(actions, alp);
+ 
++        card.addView(geminiSettingsBody);
+         updateGeminiKeyStatus();
+         return card;
+     }
+ 
+-    private void saveGeminiKey() {
++    private void setGeminiSettingsExpanded(boolean expanded, boolean focusKey) {
++        geminiSettingsExpanded = expanded;
++        if (geminiSettingsBody != null) geminiSettingsBody.setVisibility(expanded ? View.VISIBLE : View.GONE);
++        if (geminiSettingsToggle != null) geminiSettingsToggle.setText(expanded ? "收起" : "设置");
++        if (expanded && focusKey && geminiKeyInput != null) {
++            geminiKeyInput.requestFocus();
++            geminiKeyInput.postDelayed(() -> geminiKeyInput.requestFocus(), 120L);
++        }
++    }
++
++    private void saveGeminiKey(Button button) {
++        if (geminiKeyValidating) return;
+         String key = geminiKeyInput.getText().toString().trim();
+         if (key.isBlank()) {
+             toast("先粘贴 Gemini API Key");
+             return;
+         }
+-        try {
+-            GeminiKeyStore.save(this, key);
+-            geminiKeyInput.setText("");
+-            updateGeminiKeyStatus();
+-            toast("API Key 已加密保存");
+-            if (currentResult != null) showResult(currentResult);
+-        } catch (Exception e) {
+-            toast("保存 Key 失败");
+-        }
++        geminiKeyValidating = true;
++        button.setEnabled(false);
++        button.setText("验证中…");
++        geminiKeyStatus.setText("正在验证 Key 和 Gemini 3.5 Transcribe 访问权限…");
++        executor.execute(() -> {
++            GeminiKeyValidator.Result result = GeminiKeyValidator.validate(key);
++            main.post(() -> {
++                geminiKeyValidating = false;
++                button.setEnabled(true);
++                button.setText("保存并验证");
++                if (result.usable()) {
++                    try {
++                        GeminiKeyStore.save(this, key);
++                        getSharedPreferences("gemini_key_meta", MODE_PRIVATE).edit()
++                                .putBoolean("verified", true)
++                                .putLong("verified_at", System.currentTimeMillis())
++                                .putString("verified_message", result.message)
++                                .apply();
++                        geminiKeyInput.setText("");
++                        updateGeminiKeyStatus();
++                        toast(result.message);
++                        setGeminiSettingsExpanded(false, false);
++                        if (currentResult != null) showResult(currentResult);
++                    } catch (Exception e) {
++                        geminiKeyStatus.setText("Key 验证通过，但加密保存失败");
++                    }
++                } else {
++                    geminiKeyStatus.setText("验证失败：" + result.message);
++                    updateGeminiCompactStatus("Key 不可用");
++                    toast(result.message);
++                }
++            });
++        });
+     }
+ 
+-    private void updateGeminiKeyStatus() {
+-        if (geminiKeyStatus == null) return;
+-        String masked = GeminiKeyStore.masked(this);
+-        geminiKeyStatus.setText(masked.isBlank()
+-                ? "状态：未设置 API Key"
+-                : "状态：已保存 " + masked + " · 可直接生成云端字幕");
++    private void validateStoredGeminiKey(Button button) {
++        if (geminiKeyValidating) return;
++        String key = GeminiKeyStore.load(this);
++        if (key.isBlank()) {
++            geminiKeyStatus.setText("还没有已保存的 Key");
++            return;
++        }
++        geminiKeyValidating = true;
++        button.setEnabled(false);
++        button.setText("测试中…");
++        geminiKeyStatus.setText("正在验证当前 Key…");
++        executor.execute(() -> {
++            GeminiKeyValidator.Result result = GeminiKeyValidator.validate(key);
++            main.post(() -> {
++                geminiKeyValidating = false;
++                button.setEnabled(true);
++                button.setText("测试当前 Key");
++                getSharedPreferences("gemini_key_meta", MODE_PRIVATE).edit()
++                        .putBoolean("verified", result.usable())
++                        .putLong("verified_at", System.currentTimeMillis())
++                        .putString("verified_message", result.message)
++                        .apply();
++                updateGeminiKeyStatus();
++                if (!result.usable()) geminiKeyStatus.setText("验证失败：" + result.message);
++                toast(result.message);
++            });
++        });
++    }
++
++    private void updateGeminiCompactStatus(String forced) {
++        if (geminiCompactStatus == null) return;
++        if (forced != null && !forced.isBlank()) {
++            geminiCompactStatus.setText("Gemini 字幕 · " + forced);
++            return;
++        }
++        boolean has = GeminiKeyStore.hasKey(this);
++        boolean verified = getSharedPreferences("gemini_key_meta", MODE_PRIVATE).getBoolean("verified", false);
++        geminiCompactStatus.setText(!has ? "Gemini 字幕 · 未设置 Key" : (verified ? "Gemini 字幕 · Key 可用" : "Gemini 字幕 · Key 已保存，未验证"));
++    }
++
++    private void updateGeminiKeyStatus() {
++        if (geminiKeyStatus == null) return;
++        updateGeminiCompactStatus(null);
++        String masked = GeminiKeyStore.masked(this);
++        boolean verified = getSharedPreferences("gemini_key_meta", MODE_PRIVATE).getBoolean("verified", false);
++        String verifiedMessage = getSharedPreferences("gemini_key_meta", MODE_PRIVATE).getString("verified_message", "");
++        if (masked.isBlank()) {
++            geminiKeyStatus.setText("状态：未设置 API Key");
++        } else if (verified) {
++            geminiKeyStatus.setText("状态：已验证 " + masked + (verifiedMessage == null || verifiedMessage.isBlank() ? "" : " · " + verifiedMessage));
++        } else {
++            geminiKeyStatus.setText("状态：已保存 " + masked + " · 尚未验证或上次验证失败");
++        }
+     }
+ 
+     private void openExternalUrl(String url) {
+diff -ruN MediaParserApp-v018/app/src/main/java/com/example/mediaparser/subtitle/GeminiKeyValidator.java MediaParserApp/app/src/main/java/com/example/mediaparser/subtitle/GeminiKeyValidator.java
+--- MediaParserApp-v018/app/src/main/java/com/example/mediaparser/subtitle/GeminiKeyValidator.java	1970-01-01 00:00:00.000000000 +0000
++++ MediaParserApp/app/src/main/java/com/example/mediaparser/subtitle/GeminiKeyValidator.java	2026-08-28 12:29:19.260331282 +0000
+@@ -0,0 +1,107 @@
++package com.example.mediaparser.subtitle;
++
++import org.json.JSONArray;
++import org.json.JSONObject;
++
++import java.io.BufferedReader;
++import java.io.InputStream;
++import java.io.InputStreamReader;
++import java.net.HttpURLConnection;
++import java.net.URI;
++import java.nio.charset.StandardCharsets;
++
++/** Lightweight Gemini API-key validation. It does not upload user media or run inference. */
++public final class GeminiKeyValidator {
++    private static final String MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000";
++    private static final String TARGET_MODEL = "gemini-3.5-transcribe";
++
++    private GeminiKeyValidator() {}
++
++    public static Result validate(String apiKey) {
++        String key = apiKey == null ? "" : apiKey.trim();
++        if (key.isBlank()) return Result.invalid("Key 为空");
++        HttpURLConnection c = null;
++        try {
++            c = (HttpURLConnection) URI.create(MODELS_URL).toURL().openConnection();
++            c.setRequestMethod("GET");
++            c.setConnectTimeout(12_000);
++            c.setReadTimeout(20_000);
++            c.setRequestProperty("x-goog-api-key", key);
++            c.setRequestProperty("User-Agent", "MediaParser/0.1.9 Android");
++            int code = c.getResponseCode();
++            String body = readBody(c, code);
++            if (code >= 200 && code < 300) {
++                boolean found = hasTargetModel(body);
++                return found
++                        ? Result.ok("Key 可用 · Gemini 3.5 Transcribe 可访问")
++                        : Result.okWithWarning("Key 可用，但当前项目的模型列表未返回 Gemini 3.5 Transcribe");
++            }
++            String detail = apiMessage(body);
++            if (code == 400 || code == 401) return Result.invalid("Key 无效或格式不正确" + suffix(detail));
++            if (code == 403) return Result.invalid("Key 无权限、项目/API 未启用或被限制" + suffix(detail));
++            if (code == 429) return Result.quota("当前项目触发额度或速率限制" + suffix(detail));
++            return Result.error("验证失败 HTTP " + code + suffix(detail));
++        } catch (Exception e) {
++            return Result.network("网络验证失败：" + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
++        } finally {
++            if (c != null) c.disconnect();
++        }
++    }
++
++    private static boolean hasTargetModel(String body) {
++        try {
++            JSONObject root = new JSONObject(body == null ? "" : body);
++            JSONArray models = root.optJSONArray("models");
++            if (models == null) return body != null && body.contains(TARGET_MODEL);
++            for (int i = 0; i < models.length(); i++) {
++                JSONObject m = models.optJSONObject(i);
++                if (m == null) continue;
++                String name = m.optString("name", "");
++                if (name.endsWith("/" + TARGET_MODEL) || TARGET_MODEL.equals(name)) return true;
++            }
++        } catch (Exception ignored) {}
++        return false;
++    }
++
++    private static String readBody(HttpURLConnection c, int code) {
++        try {
++            InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
++            if (in == null) return "";
++            try (BufferedReader br = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
++                StringBuilder out = new StringBuilder();
++                String line;
++                while ((line = br.readLine()) != null) out.append(line);
++                return out.toString();
++            }
++        } catch (Exception e) {
++            return "";
++        }
++    }
++
++    private static String apiMessage(String body) {
++        try {
++            JSONObject root = new JSONObject(body == null ? "" : body);
++            JSONObject error = root.optJSONObject("error");
++            return error == null ? "" : error.optString("message", "");
++        } catch (Exception ignored) {
++            return "";
++        }
++    }
++
++    private static String suffix(String s) { return s == null || s.isBlank() ? "" : "：" + s; }
++
++    public static final class Result {
++        public enum State { OK, WARNING, INVALID, QUOTA, NETWORK, ERROR }
++        public final State state;
++        public final String message;
++        private Result(State state, String message) { this.state = state; this.message = message; }
++        public boolean usable() { return state == State.OK || state == State.WARNING; }
++        public static Result ok(String m) { return new Result(State.OK, m); }
++        public static Result okWithWarning(String m) { return new Result(State.WARNING, m); }
++        public static Result invalid(String m) { return new Result(State.INVALID, m); }
++        public static Result quota(String m) { return new Result(State.QUOTA, m); }
++        public static Result network(String m) { return new Result(State.NETWORK, m); }
++        public static Result error(String m) { return new Result(State.ERROR, m); }
++    }
++}
