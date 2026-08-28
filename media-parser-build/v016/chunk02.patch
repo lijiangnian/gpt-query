@@ -1,0 +1,171 @@
++            extractor.selectTrack(track.index);
++            String mime = track.format.getString(MediaFormat.KEY_MIME);
++            if (mime == null || mime.isBlank()) throw new IllegalStateException("无法识别音频编码");
++            codec = MediaCodec.createDecoderByType(mime);
++            codec.configure(track.format, null, null, 0);
++            codec.start();
++
++            MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
++            boolean inputDone = false;
++            boolean outputDone = false;
++            Resampler resampler = null;
++            int outputRate = track.format.containsKey(MediaFormat.KEY_SAMPLE_RATE)
++                    ? track.format.getInteger(MediaFormat.KEY_SAMPLE_RATE) : 0;
++            int channels = track.format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)
++                    ? track.format.getInteger(MediaFormat.KEY_CHANNEL_COUNT) : 1;
++            int pcmEncoding = AudioFormat.ENCODING_PCM_16BIT;
++            int lastPercent = -1;
++
++            while (!outputDone) {
++                if (!inputDone) {
++                    int inIndex = codec.dequeueInputBuffer(10_000);
++                    if (inIndex >= 0) {
++                        ByteBuffer in = codec.getInputBuffer(inIndex);
++                        if (in == null) throw new IllegalStateException("音频解码输入缓冲区不可用");
++                        in.clear();
++                        int size = extractor.readSampleData(in, 0);
++                        if (size < 0) {
++                            codec.queueInputBuffer(inIndex, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
++                            inputDone = true;
++                        } else {
++                            long pts = Math.max(0L, extractor.getSampleTime());
++                            codec.queueInputBuffer(inIndex, 0, size, pts, 0);
++                            extractor.advance();
++                            if (durationUs > 0 && listener != null) {
++                                int p = (int) Math.min(99L, pts * 100L / durationUs);
++                                if (p >= lastPercent + 2) {
++                                    lastPercent = p;
++                                    listener.onDecodeProgress(p);
++                                }
++                            }
++                        }
++                    }
++                }
++
++                int outIndex = codec.dequeueOutputBuffer(info, 10_000);
++                if (outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
++                    MediaFormat outFormat = codec.getOutputFormat();
++                    outputRate = outFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE)
++                            ? outFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE) : outputRate;
++                    channels = outFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT)
++                            ? outFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT) : channels;
++                    if (outFormat.containsKey(MediaFormat.KEY_PCM_ENCODING)) {
++                        pcmEncoding = outFormat.getInteger(MediaFormat.KEY_PCM_ENCODING);
++                    }
++                    if (outputRate <= 0) throw new IllegalStateException("音频采样率无效");
++                    resampler = new Resampler(outputRate, Math.max(1, channels));
++                } else if (outIndex >= 0) {
++                    if (info.size > 0) {
++                        if (resampler == null) {
++                            if (outputRate <= 0) throw new IllegalStateException("音频采样率无效");
++                            resampler = new Resampler(outputRate, Math.max(1, channels));
++                        }
++                        ByteBuffer out = codec.getOutputBuffer(outIndex);
++                        if (out == null) throw new IllegalStateException("音频解码输出缓冲区不可用");
++                        out.position(info.offset);
++                        out.limit(info.offset + info.size);
++                        out.order(ByteOrder.LITTLE_ENDIAN);
++                        resampler.consume(out, pcmEncoding);
++                        if (resampler.size() > MAX_TARGET_SAMPLES) {
++                            throw new IllegalStateException("音频过长，超过 30 分钟本地字幕限制");
++                        }
++                    }
++                    outputDone = (info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0;
++                    codec.releaseOutputBuffer(outIndex, false);
++                }
++            }
++
++            if (resampler == null || resampler.size() < TARGET_RATE / 2) {
++                throw new IllegalStateException("音轨太短或无法解码");
++            }
++            if (listener != null) listener.onDecodeProgress(100);
++            return resampler.toArray();
++        } finally {
++            if (codec != null) {
++                try { codec.stop(); } catch (Exception ignored) {}
++                try { codec.release(); } catch (Exception ignored) {}
++            }
++            extractor.release();
++        }
++    }
++
++    private static Track findAudioTrack(MediaExtractor extractor) {
++        for (int i = 0; i < extractor.getTrackCount(); i++) {
++            MediaFormat f = extractor.getTrackFormat(i);
++            String mime = f.getString(MediaFormat.KEY_MIME);
++            if (mime != null && mime.startsWith("audio/")) return new Track(i, f);
++        }
++        return null;
++    }
++
++    private static final class Track {
++        final int index;
++        final MediaFormat format;
++        Track(int index, MediaFormat format) { this.index = index; this.format = format; }
++    }
++
++    private static final class Resampler {
++        final int sourceRate;
++        final int channels;
++        final FloatBuilder output = new FloatBuilder();
++        final double step;
++        double nextSourcePos = 0.0;
++        long sourceIndex = -1L;
++        boolean hasPrev;
++        float prev;
++
++        Resampler(int sourceRate, int channels) {
++            this.sourceRate = sourceRate;
++            this.channels = channels;
++            this.step = sourceRate / (double) TARGET_RATE;
++        }
++
++        int size() { return output.size; }
++        float[] toArray() { return output.toArray(); }
++
++        void consume(ByteBuffer data, int encoding) {
++            if (encoding == AudioFormat.ENCODING_PCM_FLOAT) consumeFloat(data);
++            else if (encoding == AudioFormat.ENCODING_PCM_8BIT) consume8(data);
++            else if (encoding == AudioFormat.ENCODING_PCM_16BIT) consume16(data);
++            else throw new IllegalStateException("暂不支持该 PCM 输出格式：" + encoding);
++        }
++
++        private void consume16(ByteBuffer data) {
++            int bytesPerFrame = 2 * channels;
++            while (data.remaining() >= bytesPerFrame) {
++                float sum = 0f;
++                for (int c = 0; c < channels; c++) sum += data.getShort() / 32768f;
++                accept(sum / channels);
++            }
++        }
++
++        private void consumeFloat(ByteBuffer data) {
++            int bytesPerFrame = 4 * channels;
++            while (data.remaining() >= bytesPerFrame) {
++                float sum = 0f;
++                for (int c = 0; c < channels; c++) sum += data.getFloat();
++                accept(clamp(sum / channels));
++            }
++        }
++
++        private void consume8(ByteBuffer data) {
++            int bytesPerFrame = channels;
++            while (data.remaining() >= bytesPerFrame) {
++                float sum = 0f;
++                for (int c = 0; c < channels; c++) sum += ((data.get() & 0xff) - 128) / 128f;
++                accept(sum / channels);
++            }
++        }
++
++        private void accept(float current) {
++            sourceIndex++;
++            if (!hasPrev) {
++                prev = current;
++                hasPrev = true;
++                if (nextSourcePos <= 0.0) {
++                    output.add(current);
++                    nextSourcePos += step;
++                }
++                return;
++            }
++            double left = sourceIndex - 1.0;
