@@ -1,0 +1,180 @@
++            sh.setPadding(0, dp(6), 0, dp(10));
++            subtitlePanel.addView(sh);
++            Button subtitleButton = primaryButton("提取字幕");
++            subtitleButton.setOnClickListener(v -> startSubtitle(subtitleSource, r.title, subtitleButton));
++            subtitlePanel.addView(subtitleButton, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)));
++        }
++
+         if (r.media.size() > 1) {
+             Button saveAll = primaryButton("保存全部（" + r.media.size() + "）");
+             saveAll.setOnClickListener(v -> saveAll(r, saveAll));
+@@ -417,11 +439,127 @@ public final class MainActivity extends Activity {
+ 
+     private void clearResult() {
+         currentResult = null;
++        subtitleResultPanel = null;
+         resultBox.removeAllViews();
+         resultBox.setVisibility(View.GONE);
+         status.setText("");
+     }
+ 
++    private MediaItem findSubtitleSource(ParseResult result) {
++        if (result == null) return null;
++        for (MediaItem item : result.media) {
++            if (item.extractsAudioTrack()) return item;
++        }
++        if ("B站".equals(result.platform)) {
++            for (MediaItem item : result.media) {
++                if (item.type == MediaItem.Type.AUDIO && !item.extractsAudioTrack()) return item;
++            }
++        }
++        for (MediaItem item : result.media) {
++            if (item.type == MediaItem.Type.VIDEO) return item;
++        }
++        for (MediaItem item : result.media) {
++            if (item.type == MediaItem.Type.AUDIO) return item;
++        }
++        return null;
++    }
++
++    private void startSubtitle(MediaItem source, String title, Button button) {
++        if (subtitleBusy) return;
++        if (!WhisperModelManager.isReady(this)) {
++            new AlertDialog.Builder(this)
++                    .setTitle("首次下载字幕模型")
++                    .setMessage("本地字幕使用 Whisper Small Q5，多语言模型约 190 MB。只需下载一次，模型保存在应用内部；后续转写可以离线完成，也不会申请存储权限。")
++                    .setNegativeButton("取消", null)
++                    .setPositiveButton("下载并提取", (d, w) -> runSubtitle(source, title, button))
++                    .show();
++            return;
++        }
++        runSubtitle(source, title, button);
++    }
++
++    private void runSubtitle(MediaItem source, String title, Button button) {
++        if (subtitleBusy) return;
++        subtitleBusy = true;
++        button.setEnabled(false);
++        button.setAlpha(0.55f);
++        button.setText("准备字幕…");
++        parseButton.setEnabled(false);
++        status.setText("正在准备本地字幕识别…");
++
++        executor.execute(() -> {
++            try {
++                SubtitleOutput output = SubtitleExtractor.extract(this, source, title, new SubtitleExtractor.Listener() {
++                    @Override public void onStage(String text) {
++                        main.post(() -> {
++                            status.setText(text);
++                            if (text.contains("转写")) button.setText("转写中…");
++                            else if (text.contains("保存")) button.setText("保存字幕…");
++                            else if (text.contains("校验")) button.setText("校验模型…");
++                        });
++                    }
++
++                    @Override public void onModelProgress(int percent) {
++                        main.post(() -> button.setText("模型 " + percent + "%"));
++                    }
++
++                    @Override public void onDecodeProgress(int percent) {
++                        main.post(() -> button.setText("解码 " + percent + "%"));
++                    }
++                });
++                main.post(() -> {
++                    subtitleBusy = false;
++                    button.setText("已提取字幕");
++                    button.setEnabled(false);
++                    button.setAlpha(0.65f);
++                    parseButton.setEnabled(true);
++                    status.setText("字幕已生成：SRT + TXT 已保存到系统 Download/下载目录"
++                            + (output.detectedLanguage.isBlank() ? "" : " · 语言 " + output.detectedLanguage));
++                    showSubtitleResult(output);
++                });
++            } catch (Throwable e) {
++                main.post(() -> {
++                    subtitleBusy = false;
++                    button.setText("重试字幕");
++                    button.setEnabled(true);
++                    button.setAlpha(1f);
++                    parseButton.setEnabled(true);
++                    status.setText("字幕提取失败：" + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
++                });
++            }
++        });
++    }
++
++    private void showSubtitleResult(SubtitleOutput output) {
++        if (subtitleResultPanel != null) resultBox.removeView(subtitleResultPanel);
++        LinearLayout card = panel();
++        subtitleResultPanel = card;
++        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
++        cp.topMargin = dp(10);
++        resultBox.addView(card, cp);
++
++        String meta = "字幕已生成 · " + output.segments.size() + " 段";
++        if (!output.detectedLanguage.isBlank()) meta += " · " + output.detectedLanguage;
++        card.addView(text(meta, 16, TEXT, true));
++        String preview = output.fullText.length() > 2600 ? output.fullText.substring(0, 2600) + "…" : output.fullText;
++        TextView body = text(preview, 14, MUTED, false);
++        body.setTextIsSelectable(true);
++        body.setPadding(0, dp(8), 0, dp(10));
++        card.addView(body);
++
++        LinearLayout actions = new LinearLayout(this);
++        actions.setOrientation(LinearLayout.HORIZONTAL);
++        Button copyText = secondaryButton("复制全文");
++        copyText.setOnClickListener(v -> copy(output.fullText));
++        Button open = secondaryButton("打开下载");
++        open.setOnClickListener(v -> openDownloadsFolder());
++        actions.addView(copyText, new LinearLayout.LayoutParams(0, dp(44), 1f));
++        LinearLayout.LayoutParams op = new LinearLayout.LayoutParams(0, dp(44), 1f);
++        op.setMarginStart(dp(8));
++        actions.addView(open, op);
++        card.addView(actions);
++    }
++
+     private void saveOne(MediaItem item, String title, Button button, String idleLabel) {
+         boolean extracting = item.extractsAudioTrack();
+         button.setEnabled(false);
+diff --git a/app/src/main/java/com/example/mediaparser/subtitle/AudioDecoder.java b/app/src/main/java/com/example/mediaparser/subtitle/AudioDecoder.java
+new file mode 100644
+index 0000000..a7c2146
+--- /dev/null
++++ b/app/src/main/java/com/example/mediaparser/subtitle/AudioDecoder.java
+@@ -0,0 +1,238 @@
++package com.example.mediaparser.subtitle;
++
++import android.media.AudioFormat;
++import android.media.MediaCodec;
++import android.media.MediaExtractor;
++import android.media.MediaFormat;
++
++import java.io.File;
++import java.nio.ByteBuffer;
++import java.nio.ByteOrder;
++import java.util.Arrays;
++
++public final class AudioDecoder {
++    private static final int TARGET_RATE = 16_000;
++    private static final long MAX_DURATION_US = 30L * 60L * 1_000_000L;
++    private static final int MAX_TARGET_SAMPLES = 30 * 60 * TARGET_RATE;
++
++    private AudioDecoder() {}
++
++    public interface Listener {
++        void onDecodeProgress(int percent);
++    }
++
++    public static float[] decode16kMono(File input, Listener listener) throws Exception {
++        MediaExtractor extractor = new MediaExtractor();
++        MediaCodec codec = null;
++        try {
++            extractor.setDataSource(input.getAbsolutePath());
++            Track track = findAudioTrack(extractor);
++            if (track == null) throw new IllegalStateException("媒体中没有可识别的音轨");
++            long durationUs = track.format.containsKey(MediaFormat.KEY_DURATION)
++                    ? track.format.getLong(MediaFormat.KEY_DURATION) : -1L;
++            if (durationUs > MAX_DURATION_US) {
++                throw new IllegalStateException("当前本地字幕支持 30 分钟以内的音视频");
++            }
++
