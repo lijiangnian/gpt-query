@@ -3,7 +3,9 @@ name: Build MediaParser v0.1.7
 on:
   push:
     branches: [media-parser-app-build-20260828]
-    paths: ['.github/workflows/build-media-parser-v017.yml']
+    paths:
+      - '.github/workflows/build-media-parser-v017.yml'
+      - 'media-parser-build/v017/**'
   workflow_dispatch:
 
 permissions:
