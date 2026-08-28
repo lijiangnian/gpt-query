@@ -1,0 +1,186 @@
++import android.net.Uri;
++import android.os.Environment;
++import android.provider.MediaStore;
++
++import java.io.OutputStream;
++import java.nio.charset.StandardCharsets;
++
++public final class SubtitleSaver {
++    private SubtitleSaver() {}
++
++    public static String saveText(Context context, String baseName, String suffix, String extension,
++                                  String mimeType, String content) throws Exception {
++        String safe = sanitize(baseName);
++        if (safe.isBlank()) safe = "media";
++        if (safe.length() > 48) safe = safe.substring(0, 48);
++        String name = safe + suffix + "_" + System.currentTimeMillis() + extension;
++
++        ContentResolver resolver = context.getContentResolver();
++        ContentValues values = new ContentValues();
++        values.put(MediaStore.MediaColumns.DISPLAY_NAME, name);
++        values.put(MediaStore.MediaColumns.MIME_TYPE, mimeType);
++        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
++        values.put(MediaStore.MediaColumns.IS_PENDING, 1);
++        Uri uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
++        if (uri == null) throw new IllegalStateException("系统无法创建字幕文件");
++        try {
++            try (OutputStream out = resolver.openOutputStream(uri)) {
++                if (out == null) throw new IllegalStateException("系统无法写入字幕文件");
++                out.write(content.getBytes(StandardCharsets.UTF_8));
++                out.flush();
++            }
++            ContentValues done = new ContentValues();
++            done.put(MediaStore.MediaColumns.IS_PENDING, 0);
++            resolver.update(uri, done, null, null);
++            return uri.toString();
++        } catch (Exception e) {
++            resolver.delete(uri, null, null);
++            throw e;
++        }
++    }
++
++    private static String sanitize(String s) {
++        if (s == null) return "";
++        return s.replaceAll("[\\\\/:*?\"<>|\\r\\n\\t]+", "_").trim();
++    }
++}
+diff --git a/app/src/main/java/com/example/mediaparser/subtitle/SubtitleSegment.java b/app/src/main/java/com/example/mediaparser/subtitle/SubtitleSegment.java
+new file mode 100644
+index 0000000..499dedf
+--- /dev/null
++++ b/app/src/main/java/com/example/mediaparser/subtitle/SubtitleSegment.java
+@@ -0,0 +1,13 @@
++package com.example.mediaparser.subtitle;
++
++public final class SubtitleSegment {
++    public final long startCs;
++    public final long endCs;
++    public final String text;
++
++    public SubtitleSegment(long startCs, long endCs, String text) {
++        this.startCs = Math.max(0L, startCs);
++        this.endCs = Math.max(this.startCs, endCs);
++        this.text = text == null ? "" : text.trim();
++    }
++}
+diff --git a/app/src/main/java/com/example/mediaparser/subtitle/WhisperLib.java b/app/src/main/java/com/example/mediaparser/subtitle/WhisperLib.java
+new file mode 100644
+index 0000000..dd31c73
+--- /dev/null
++++ b/app/src/main/java/com/example/mediaparser/subtitle/WhisperLib.java
+@@ -0,0 +1,18 @@
++package com.example.mediaparser.subtitle;
++
++public final class WhisperLib {
++    static {
++        System.loadLibrary("whisper");
++    }
++
++    private WhisperLib() {}
++
++    public static native long initContext(String modelPath);
++    public static native void freeContext(long contextPtr);
++    public static native int fullTranscribe(long contextPtr, int numThreads, float[] audioData, String language);
++    public static native int getTextSegmentCount(long contextPtr);
++    public static native String getTextSegment(long contextPtr, int index);
++    public static native long getTextSegmentT0(long contextPtr, int index);
++    public static native long getTextSegmentT1(long contextPtr, int index);
++    public static native String getDetectedLanguage(long contextPtr);
++}
+diff --git a/app/src/main/java/com/example/mediaparser/subtitle/WhisperModelManager.java b/app/src/main/java/com/example/mediaparser/subtitle/WhisperModelManager.java
+new file mode 100644
+index 0000000..1e2712d
+--- /dev/null
++++ b/app/src/main/java/com/example/mediaparser/subtitle/WhisperModelManager.java
+@@ -0,0 +1,152 @@
++package com.example.mediaparser.subtitle;
++
++import android.content.Context;
++
++import java.io.File;
++import java.io.FileInputStream;
++import java.io.FileOutputStream;
++import java.io.InputStream;
++import java.net.HttpURLConnection;
++import java.net.URI;
++import java.security.MessageDigest;
++import java.util.Locale;
++
++public final class WhisperModelManager {
++    public static final String MODEL_NAME = "ggml-small-q5_1.bin";
++    public static final long MODEL_SIZE_BYTES = 190_085_487L;
++    public static final String MODEL_SHA256 = "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb";
++    private static final String MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin?download=true";
++
++    private WhisperModelManager() {}
++
++    public interface Listener {
++        void onModelProgress(long downloaded, long total);
++        void onModelStage(String stage);
++    }
++
++    public static File modelFile(Context context) {
++        File dir = new File(context.getFilesDir(), "whisper-models");
++        return new File(dir, MODEL_NAME);
++    }
++
++    public static boolean isReady(Context context) {
++        File model = modelFile(context);
++        File marker = new File(model.getParentFile(), MODEL_NAME + ".verified");
++        return model.isFile() && model.length() > 180L * 1024L * 1024L && marker.isFile();
++    }
++
++    public static File ensureModel(Context context, Listener listener) throws Exception {
++        File model = modelFile(context);
++        File dir = model.getParentFile();
++        if (!dir.exists() && !dir.mkdirs()) throw new IllegalStateException("无法创建模型目录");
++        File marker = new File(dir, MODEL_NAME + ".verified");
++
++        if (model.isFile() && marker.isFile() && model.length() > 180L * 1024L * 1024L) return model;
++
++        if (model.isFile()) {
++            if (listener != null) listener.onModelStage("正在校验字幕模型…");
++            if (MODEL_SHA256.equalsIgnoreCase(sha256(model))) {
++                writeMarker(marker);
++                return model;
++            }
++            //noinspection ResultOfMethodCallIgnored
++            model.delete();
++            //noinspection ResultOfMethodCallIgnored
++            marker.delete();
++        }
++
++        File part = new File(dir, MODEL_NAME + ".part");
++        //noinspection ResultOfMethodCallIgnored
++        part.delete();
++        if (listener != null) listener.onModelStage("首次使用：正在下载 Whisper Small Q5 模型…");
++        download(MODEL_URL, part, listener);
++
++        if (listener != null) listener.onModelStage("正在校验字幕模型…");
++        String actual = sha256(part);
++        if (!MODEL_SHA256.equalsIgnoreCase(actual)) {
++            //noinspection ResultOfMethodCallIgnored
++            part.delete();
++            throw new IllegalStateException("字幕模型校验失败，请重试");
++        }
++        if (!part.renameTo(model)) {
++            copy(part, model);
++            //noinspection ResultOfMethodCallIgnored
++            part.delete();
++        }
++        writeMarker(marker);
++        return model;
++    }
++
++    private static void download(String url, File outFile, Listener listener) throws Exception {
++        String current = url;
++        for (int redirects = 0; redirects < 8; redirects++) {
++            HttpURLConnection c = (HttpURLConnection) URI.create(current).toURL().openConnection();
++            c.setInstanceFollowRedirects(false);
++            c.setConnectTimeout(20_000);
++            c.setReadTimeout(90_000);
++            c.setRequestProperty("User-Agent", "MediaParser/0.1.6 Android");
++            int status = c.getResponseCode();
++            if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
++                String loc = c.getHeaderField("Location");
++                c.disconnect();
