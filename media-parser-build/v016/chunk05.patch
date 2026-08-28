@@ -1,0 +1,194 @@
++                if (loc == null || loc.isBlank()) throw new IllegalStateException("模型下载重定向失败");
++                current = URI.create(current).resolve(loc).toString();
++                continue;
++            }
++            if (status < 200 || status >= 300) {
++                c.disconnect();
++                throw new IllegalStateException("字幕模型下载失败 HTTP " + status);
++            }
++            long total = c.getContentLengthLong();
++            if (total <= 0) total = MODEL_SIZE_BYTES;
++            long downloaded = 0L;
++            try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(outFile)) {
++                byte[] buf = new byte[256 * 1024];
++                int n;
++                long nextNotify = 0L;
++                while ((n = in.read(buf)) != -1) {
++                    out.write(buf, 0, n);
++                    downloaded += n;
++                    if (listener != null && downloaded >= nextNotify) {
++                        listener.onModelProgress(downloaded, total);
++                        nextNotify = downloaded + 1024L * 1024L;
++                    }
++                }
++                out.getFD().sync();
++            } finally {
++                c.disconnect();
++            }
++            if (listener != null) listener.onModelProgress(downloaded, total);
++            return;
++        }
++        throw new IllegalStateException("字幕模型下载重定向过多");
++    }
++
++    private static String sha256(File f) throws Exception {
++        MessageDigest md = MessageDigest.getInstance("SHA-256");
++        try (FileInputStream in = new FileInputStream(f)) {
++            byte[] buf = new byte[1024 * 1024];
++            int n;
++            while ((n = in.read(buf)) != -1) md.update(buf, 0, n);
++        }
++        StringBuilder sb = new StringBuilder(64);
++        for (byte b : md.digest()) sb.append(String.format(Locale.ROOT, "%02x", b & 0xff));
++        return sb.toString();
++    }
++
++    private static void copy(File from, File to) throws Exception {
++        try (FileInputStream in = new FileInputStream(from); FileOutputStream out = new FileOutputStream(to)) {
++            byte[] buf = new byte[1024 * 1024];
++            int n;
++            while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
++            out.getFD().sync();
++        }
++    }
++
++    private static void writeMarker(File marker) throws Exception {
++        try (FileOutputStream out = new FileOutputStream(marker)) {
++            out.write(MODEL_SHA256.getBytes(java.nio.charset.StandardCharsets.UTF_8));
++            out.getFD().sync();
++        }
++    }
++}
+diff --git a/app/src/main/java/com/example/mediaparser/util/FileSaver.java b/app/src/main/java/com/example/mediaparser/util/FileSaver.java
+index 130b540..90e078b 100644
+--- a/app/src/main/java/com/example/mediaparser/util/FileSaver.java
++++ b/app/src/main/java/com/example/mediaparser/util/FileSaver.java
+@@ -34,6 +34,22 @@ public final class FileSaver {
+         return saveDirect(context, item, baseName);
+     }
+ 
++    public static File downloadToCache(Context context, MediaItem item, String suffix) throws Exception {
++        String ext = (suffix == null || suffix.isBlank()) ? ".media" : suffix;
++        File temp = File.createTempFile("mediaparser_subtitle_src_", ext, context.getCacheDir());
++        boolean ok = false;
++        try {
++            try (FileOutputStream out = new FileOutputStream(temp)) { streamDownload(item, out); }
++            ok = true;
++            return temp;
++        } finally {
++            if (!ok) {
++                //noinspection ResultOfMethodCallIgnored
++                temp.delete();
++            }
++        }
++    }
++
+     private static String saveDirect(Context context, MediaItem item, String baseName) throws Exception {
+         String ext = extension(item);
+         String safe = safeName(baseName);
+diff --git a/app/src/main/jni/whisper/CMakeLists.txt b/app/src/main/jni/whisper/CMakeLists.txt
+new file mode 100644
+index 0000000..69e9a6f
+--- /dev/null
++++ b/app/src/main/jni/whisper/CMakeLists.txt
+@@ -0,0 +1,33 @@
++cmake_minimum_required(VERSION 3.22.1)
++project(mediaparser_whisper)
++
++set(CMAKE_C_STANDARD 11)
++set(CMAKE_CXX_STANDARD 17)
++set(WHISPER_LIB_DIR ${CMAKE_SOURCE_DIR}/../../../../../third_party/whisper.cpp)
++
++if (NOT EXISTS "${WHISPER_LIB_DIR}/src/whisper.cpp")
++    message(FATAL_ERROR "whisper.cpp v1.9.1 source is missing at ${WHISPER_LIB_DIR}")
++endif()
++
++set(SOURCE_FILES
++    ${WHISPER_LIB_DIR}/src/whisper.cpp
++    ${CMAKE_SOURCE_DIR}/jni.c
++)
++
++find_library(LOG_LIB log)
++include(FetchContent)
++
++add_library(whisper SHARED ${SOURCE_FILES})
++FetchContent_Declare(ggml SOURCE_DIR ${WHISPER_LIB_DIR}/ggml)
++FetchContent_MakeAvailable(ggml)
++
++target_link_libraries(whisper ${LOG_LIB} android ggml)
++target_compile_definitions(whisper PUBLIC GGML_USE_CPU)
++target_compile_options(whisper PRIVATE -O3 -fvisibility=hidden -fvisibility-inlines-hidden -ffunction-sections -fdata-sections)
++
++include_directories(${WHISPER_LIB_DIR})
++include_directories(${WHISPER_LIB_DIR}/src)
++include_directories(${WHISPER_LIB_DIR}/include)
++include_directories(${WHISPER_LIB_DIR}/ggml/include)
++include_directories(${WHISPER_LIB_DIR}/ggml/src)
++include_directories(${WHISPER_LIB_DIR}/ggml/src/ggml-cpu)
+diff --git a/app/src/main/jni/whisper/jni.c b/app/src/main/jni/whisper/jni.c
+new file mode 100644
+index 0000000..de371a0
+--- /dev/null
++++ b/app/src/main/jni/whisper/jni.c
+@@ -0,0 +1,113 @@
++#include <jni.h>
++#include <android/log.h>
++#include <stdlib.h>
++#include <string.h>
++#include "whisper.h"
++#include "ggml.h"
++
++#define TAG "MediaParserWhisper"
++#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
++#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
++
++JNIEXPORT jlong JNICALL
++Java_com_example_mediaparser_subtitle_WhisperLib_initContext(
++        JNIEnv * env, jclass clazz, jstring model_path_str) {
++    (void) clazz;
++    const char * model_path = (*env)->GetStringUTFChars(env, model_path_str, NULL);
++    struct whisper_context * context = whisper_init_from_file(model_path);
++    (*env)->ReleaseStringUTFChars(env, model_path_str, model_path);
++    return (jlong) context;
++}
++
++JNIEXPORT void JNICALL
++Java_com_example_mediaparser_subtitle_WhisperLib_freeContext(
++        JNIEnv * env, jclass clazz, jlong context_ptr) {
++    (void) env;
++    (void) clazz;
++    struct whisper_context * context = (struct whisper_context *) context_ptr;
++    if (context != NULL) whisper_free(context);
++}
++
++JNIEXPORT jint JNICALL
++Java_com_example_mediaparser_subtitle_WhisperLib_fullTranscribe(
++        JNIEnv * env, jclass clazz, jlong context_ptr, jint num_threads,
++        jfloatArray audio_data, jstring language_str) {
++    (void) clazz;
++    struct whisper_context * context = (struct whisper_context *) context_ptr;
++    if (context == NULL || audio_data == NULL) return -2;
++
++    jfloat * audio = (*env)->GetFloatArrayElements(env, audio_data, NULL);
++    const jsize n_samples = (*env)->GetArrayLength(env, audio_data);
++    const char * language = language_str == NULL ? "auto" : (*env)->GetStringUTFChars(env, language_str, NULL);
++
++    struct whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
++    params.print_realtime = false;
++    params.print_progress = false;
++    params.print_timestamps = false;
++    params.print_special = false;
++    params.translate = false;
++    params.language = language;
++    params.n_threads = num_threads > 0 ? num_threads : 4;
++    params.offset_ms = 0;
++    params.duration_ms = 0;
++    params.no_context = true;
++    params.single_segment = false;
++    params.suppress_blank = true;
++    params.suppress_nst = true;
++
++    LOGI("whisper_full: samples=%d threads=%d language=%s", (int) n_samples, params.n_threads, language);
++    const int rc = whisper_full(context, params, audio, n_samples);
++
++    if (language_str != NULL) (*env)->ReleaseStringUTFChars(env, language_str, language);
