@@ -1,0 +1,178 @@
++            while (nextSourcePos <= sourceIndex + 1e-9) {
++                double frac = nextSourcePos - left;
++                if (frac >= -1e-9 && frac <= 1.0000001) {
++                    output.add(clamp((float) (prev + (current - prev) * frac)));
++                }
++                nextSourcePos += step;
++            }
++            prev = current;
++        }
++
++        private static float clamp(float v) {
++            return Math.max(-1f, Math.min(1f, v));
++        }
++    }
++
++    private static final class FloatBuilder {
++        float[] data = new float[16000 * 30];
++        int size;
++
++        void add(float v) {
++            if (size == data.length) {
++                int next = Math.min(MAX_TARGET_SAMPLES, Math.max(data.length + 1, data.length + data.length / 2));
++                if (next <= data.length) throw new IllegalStateException("音频过长");
++                data = Arrays.copyOf(data, next);
++            }
++            data[size++] = v;
++        }
++
++        float[] toArray() { return Arrays.copyOf(data, size); }
++    }
++}
+diff --git a/app/src/main/java/com/example/mediaparser/subtitle/SubtitleExtractor.java b/app/src/main/java/com/example/mediaparser/subtitle/SubtitleExtractor.java
+new file mode 100644
+index 0000000..af67e24
+--- /dev/null
++++ b/app/src/main/java/com/example/mediaparser/subtitle/SubtitleExtractor.java
+@@ -0,0 +1,101 @@
++package com.example.mediaparser.subtitle;
++
++import android.content.Context;
++
++import com.example.mediaparser.model.MediaItem;
++import com.example.mediaparser.util.FileSaver;
++
++import java.io.File;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Locale;
++
++public final class SubtitleExtractor {
++    private SubtitleExtractor() {}
++
++    public interface Listener {
++        void onStage(String text);
++        void onModelProgress(int percent);
++        void onDecodeProgress(int percent);
++    }
++
++    public static SubtitleOutput extract(Context context, MediaItem source, String title, Listener listener) throws Exception {
++        if (source == null || source.url.isBlank()) throw new IllegalArgumentException("没有可用于字幕识别的音视频");
++
++        File model = WhisperModelManager.ensureModel(context, new WhisperModelManager.Listener() {
++            @Override public void onModelProgress(long downloaded, long total) {
++                if (listener != null && total > 0) listener.onModelProgress((int) Math.min(100L, downloaded * 100L / total));
++            }
++            @Override public void onModelStage(String stage) {
++                if (listener != null) listener.onStage(stage);
++            }
++        });
++
++        if (listener != null) listener.onStage("正在读取作品音轨…");
++        File media = FileSaver.downloadToCache(context, source, source.type == MediaItem.Type.VIDEO ? ".mp4" : ".media");
++        try {
++            if (listener != null) listener.onStage("正在解码并转换为 16kHz 单声道…");
++            float[] pcm = AudioDecoder.decode16kMono(media, p -> {
++                if (listener != null) listener.onDecodeProgress(p);
++            });
++
++            if (listener != null) listener.onStage("正在本地转写字幕…");
++            long ctx = WhisperLib.initContext(model.getAbsolutePath());
++            if (ctx == 0L) throw new IllegalStateException("Whisper Small 模型加载失败");
++            try {
++                int cores = Runtime.getRuntime().availableProcessors();
++                int threads = Math.max(2, Math.min(6, cores <= 2 ? cores : cores - 1));
++                int rc = WhisperLib.fullTranscribe(ctx, threads, pcm, "auto");
++                if (rc != 0) throw new IllegalStateException("本地字幕转写失败，错误码 " + rc);
++
++                int count = WhisperLib.getTextSegmentCount(ctx);
++                if (count <= 0) throw new IllegalStateException("没有识别到可用语音字幕");
++                List<SubtitleSegment> segments = new ArrayList<>(count);
++                StringBuilder full = new StringBuilder();
++                StringBuilder srt = new StringBuilder();
++                for (int i = 0; i < count; i++) {
++                    String text = clean(WhisperLib.getTextSegment(ctx, i));
++                    if (text.isBlank()) continue;
++                    long t0 = WhisperLib.getTextSegmentT0(ctx, i);
++                    long t1 = WhisperLib.getTextSegmentT1(ctx, i);
++                    SubtitleSegment segment = new SubtitleSegment(t0, t1, text);
++                    segments.add(segment);
++                    if (full.length() > 0) full.append('\n');
++                    full.append(text);
++                    srt.append(segments.size()).append('\n')
++                            .append(formatSrtTime(t0)).append(" --> ").append(formatSrtTime(t1)).append('\n')
++                            .append(text).append("\n\n");
++                }
++                if (segments.isEmpty()) throw new IllegalStateException("没有识别到可用语音字幕");
++                String language = clean(WhisperLib.getDetectedLanguage(ctx));
++
++                if (listener != null) listener.onStage("正在保存 SRT 和 TXT 到系统下载目录…");
++                String stampTitle = title == null || title.isBlank() ? "media" : title;
++                String srtUri = SubtitleSaver.saveText(context, stampTitle, "_字幕", ".srt", "application/x-subrip", srt.toString());
++                String txtUri = SubtitleSaver.saveText(context, stampTitle, "_文字", ".txt", "text/plain", full.toString());
++                return new SubtitleOutput(segments, full.toString(), srt.toString(), language, srtUri, txtUri);
++            } finally {
++                WhisperLib.freeContext(ctx);
++            }
++        } finally {
++            //noinspection ResultOfMethodCallIgnored
++            media.delete();
++        }
++    }
++
++    private static String clean(String s) {
++        if (s == null) return "";
++        return s.replace('\u0000', ' ').replaceAll("\\s+", " ").trim();
++    }
++
++    private static String formatSrtTime(long centiseconds) {
++        long ms = Math.max(0L, centiseconds) * 10L;
++        long hours = ms / 3_600_000L;
++        ms %= 3_600_000L;
++        long minutes = ms / 60_000L;
++        ms %= 60_000L;
++        long seconds = ms / 1_000L;
++        long millis = ms % 1_000L;
++        return String.format(Locale.ROOT, "%02d:%02d:%02d,%03d", hours, minutes, seconds, millis);
++    }
++}
+diff --git a/app/src/main/java/com/example/mediaparser/subtitle/SubtitleOutput.java b/app/src/main/java/com/example/mediaparser/subtitle/SubtitleOutput.java
+new file mode 100644
+index 0000000..5e38282
+--- /dev/null
++++ b/app/src/main/java/com/example/mediaparser/subtitle/SubtitleOutput.java
+@@ -0,0 +1,23 @@
++package com.example.mediaparser.subtitle;
++
++import java.util.Collections;
++import java.util.List;
++
++public final class SubtitleOutput {
++    public final List<SubtitleSegment> segments;
++    public final String fullText;
++    public final String srt;
++    public final String detectedLanguage;
++    public final String srtLocation;
++    public final String txtLocation;
++
++    public SubtitleOutput(List<SubtitleSegment> segments, String fullText, String srt,
++                          String detectedLanguage, String srtLocation, String txtLocation) {
++        this.segments = Collections.unmodifiableList(segments);
++        this.fullText = fullText == null ? "" : fullText;
++        this.srt = srt == null ? "" : srt;
++        this.detectedLanguage = detectedLanguage == null ? "" : detectedLanguage;
++        this.srtLocation = srtLocation == null ? "" : srtLocation;
++        this.txtLocation = txtLocation == null ? "" : txtLocation;
++    }
++}
+diff --git a/app/src/main/java/com/example/mediaparser/subtitle/SubtitleSaver.java b/app/src/main/java/com/example/mediaparser/subtitle/SubtitleSaver.java
+new file mode 100644
+index 0000000..e9fe37b
+--- /dev/null
++++ b/app/src/main/java/com/example/mediaparser/subtitle/SubtitleSaver.java
+@@ -0,0 +1,51 @@
++package com.example.mediaparser.subtitle;
++
++import android.content.ContentResolver;
++import android.content.ContentValues;
++import android.content.Context;
