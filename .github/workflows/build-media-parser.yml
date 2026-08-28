@@ -77,8 +77,14 @@ jobs:
               media-parser-build/v016/chunk03.patch \
               media-parser-build/v016/chunk04.patch \
               media-parser-build/v016/chunk05.patch \
-              media-parser-build/v016/chunk06.patch > /tmp/v016.patch
-          patch -d MediaParserApp -p1 < /tmp/v016.patch
+              media-parser-build/v016/chunk06.patch > /tmp/v016-all.patch
+          awk '
+            /^diff --git / {
+              skip = ($3 == "a/README.md" || $3 == "a/.github/workflows/build-apk.yml")
+            }
+            !skip { print }
+          ' /tmp/v016-all.patch > /tmp/v016-code.patch
+          patch -d MediaParserApp -p1 < /tmp/v016-code.patch
           grep -q "versionName '0.1.6'" MediaParserApp/app/build.gradle
           grep -q 'abiFilters.*arm64-v8a' MediaParserApp/app/build.gradle
           grep -q '提取字幕' MediaParserApp/app/src/main/java/com/example/mediaparser/MainActivity.java
