@@ -320,3 +320,15 @@ diff -ruN mp17_v016/app/src/main/java/com/example/mediaparser/MainActivity.java 
 +        return Math.max(0L, bytes) / (1024L * 1024L) + " MB";
 +    }
 +
+     private void showSubtitleResult(SubtitleOutput output) {
+         if (subtitleResultPanel != null) resultBox.removeView(subtitleResultPanel);
+         LinearLayout card = panel();
+@@ -551,7 +690,7 @@
+         actions.setOrientation(LinearLayout.HORIZONTAL);
+         Button copyText = secondaryButton("复制全文");
+         copyText.setOnClickListener(v -> copy(output.fullText));
+-        Button open = secondaryButton("打开下载");
++        Button open = secondaryButton("查看文件");
+         open.setOnClickListener(v -> openDownloadsFolder());
+         actions.addView(copyText, new LinearLayout.LayoutParams(0, dp(44), 1f));
+         LinearLayout.LayoutParams op = new LinearLayout.LayoutParams(0, dp(44), 1f);
