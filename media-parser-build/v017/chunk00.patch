@@ -1,0 +1,322 @@
+diff -ruN mp17_v016/app/build.gradle mp17/app/build.gradle
+--- mp17_v016/app/build.gradle	2026-08-28 10:33:33.000000000 +0000
++++ mp17/app/build.gradle	2026-08-28 11:17:13.794225078 +0000
+@@ -11,8 +11,8 @@
+         applicationId 'com.example.mediaparser'
+         minSdk 29
+         targetSdk 35
+-        versionCode 7
+-        versionName '0.1.6'
++        versionCode 8
++        versionName '0.1.7'
+ 
+         ndk {
+             abiFilters 'arm64-v8a'
+diff -ruN mp17_v016/app/src/main/java/com/example/mediaparser/MainActivity.java mp17/app/src/main/java/com/example/mediaparser/MainActivity.java
+--- mp17_v016/app/src/main/java/com/example/mediaparser/MainActivity.java	2026-08-28 10:34:03.000000000 +0000
++++ mp17/app/src/main/java/com/example/mediaparser/MainActivity.java	2026-08-28 11:18:08.187490117 +0000
+@@ -14,6 +14,7 @@
+ import android.os.Bundle;
+ import android.os.Handler;
+ import android.os.Looper;
++import android.os.SystemClock;
+ import android.provider.DocumentsContract;
+ import android.text.TextUtils;
+ import android.view.Gravity;
+@@ -301,19 +302,40 @@
+         headers.put("Referer", "https://www.xiaohongshu.com/");
+         headers.put("User-Agent", com.example.mediaparser.net.HttpClient.DESKTOP_UA);
+         JSONArray media = obj.optJSONArray("media");
+-        String mainVideoForAudio = "";
++        JSONObject mainVideo = null;
+         if (media != null) {
+             for (int i = 0; i < media.length(); i++) {
+                 JSONObject m = media.optJSONObject(i);
+                 if (m == null) continue;
++                String type = m.optString("type", "image");
++                String label = m.optString("label", "");
++                String url = m.optString("url", "");
++                if ("video".equals(type) && !isLiveLabel(label) && isPlausibleXhsVideoUrl(url)) {
++                    mainVideo = m;
++                    break;
++                }
++            }
++        }
++
++        String mainVideoForAudio = "";
++        if (mainVideo != null) {
++            String url = mainVideo.optString("url", "");
++            b.add(new MediaItem(MediaItem.Type.VIDEO, "小红书视频", url, headers));
++            mainVideoForAudio = url;
++        } else if (media != null) {
++            for (int i = 0; i < media.length(); i++) {
++                JSONObject m = media.optJSONObject(i);
++                if (m == null) continue;
+                 String url = m.optString("url", "");
+                 if (url.isBlank()) continue;
+                 String type = m.optString("type", "image");
+                 String label = m.optString("label", "小红书媒体");
+-                MediaItem.Type mt = "video".equals(type) ? MediaItem.Type.VIDEO : ("audio".equals(type) ? MediaItem.Type.AUDIO : MediaItem.Type.IMAGE);
+-                b.add(new MediaItem(mt, label, url, headers));
+-                if (mainVideoForAudio.isBlank() && mt == MediaItem.Type.VIDEO && !label.toLowerCase().contains("live") && !label.contains("实况") && !url.toLowerCase().contains(".m3u8")) {
+-                    mainVideoForAudio = url;
++                if ("video".equals(type)) {
++                    if (isLiveLabel(label) && isPlausibleXhsVideoUrl(url)) {
++                        b.add(new MediaItem(MediaItem.Type.VIDEO, label, url, headers));
++                    }
++                } else if ("image".equals(type)) {
++                    b.add(new MediaItem(MediaItem.Type.IMAGE, label, url, headers));
+                 }
+             }
+         }
+@@ -323,6 +345,26 @@
+         return result;
+     }
+ 
++    private static boolean isLiveLabel(String label) {
++        String l = label == null ? "" : label.toLowerCase();
++        return l.contains("live") || l.contains("实况");
++    }
++
++    private static boolean isPlausibleXhsVideoUrl(String raw) {
++        if (raw == null || raw.isBlank()) return false;
++        try {
++            Uri u = Uri.parse(raw);
++            String host = u.getHost() == null ? "" : u.getHost().toLowerCase();
++            String path = u.getPath() == null ? "" : u.getPath().toLowerCase();
++            String[] bad = {".js", ".css", ".json", ".html", ".htm", ".svg", ".woff", ".woff2", ".ttf", ".map"};
++            for (String ext : bad) if (path.endsWith(ext)) return false;
++            if (host.contains("sns-video")) return true;
++            return path.endsWith(".mp4") || path.endsWith(".m4v") || path.endsWith(".mov");
++        } catch (Exception e) {
++            return false;
++        }
++    }
++
+     private void showResult(ParseResult r) {
+         parsing = false;
+         currentResult = r;
+@@ -360,6 +402,18 @@
+         }
+         resultBox.addView(info);
+ 
++        if (r.media.size() > 1) {
++            Button saveAll = primaryButton("保存全部（" + r.media.size() + "）");
++            saveAll.setOnClickListener(v -> saveAll(r, saveAll));
++            LinearLayout.LayoutParams sap = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48));
++            sap.topMargin = dp(10);
++            resultBox.addView(saveAll, sap);
++        }
++
++        for (int i = 0; i < r.media.size(); i++) addMediaCard(r.media.get(i), i);
++
++        // Subtitle extraction is intentionally last: it is a derived, slower action rather than
++        // one of the source media files.
+         MediaItem subtitleSource = findSubtitleSource(r);
+         if (subtitleSource != null) {
+             LinearLayout subtitlePanel = panel();
+@@ -367,23 +421,18 @@
+             stp.topMargin = dp(10);
+             resultBox.addView(subtitlePanel, stp);
+             subtitlePanel.addView(text("本地字幕", 16, TEXT, true));
+-            TextView sh = text("Whisper Small Q5 · 首次约 190 MB 模型 · 后续可离线 · 自动生成 SRT + TXT", 12, MUTED, false);
+-            sh.setPadding(0, dp(6), 0, dp(10));
++            TextView sh = text("Whisper Small Q5 · 本地识别 · 自动生成 SRT + TXT", 12, MUTED, false);
++            sh.setPadding(0, dp(6), 0, dp(7));
+             subtitlePanel.addView(sh);
++            TextView subtitleState = text(WhisperModelManager.isReady(this)
++                    ? "模型已就绪 · 提取时显示实时进度和预计剩余时间"
++                    : "首次需下载约 190 MB 模型 · 下载、解码、转写都会显示进度", 12, MUTED, false);
++            subtitleState.setPadding(0, 0, 0, dp(9));
++            subtitlePanel.addView(subtitleState);
+             Button subtitleButton = primaryButton("提取字幕");
+-            subtitleButton.setOnClickListener(v -> startSubtitle(subtitleSource, r.title, subtitleButton));
++            subtitleButton.setOnClickListener(v -> startSubtitle(subtitleSource, r.title, subtitleButton, subtitleState));
+             subtitlePanel.addView(subtitleButton, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)));
+         }
+-
+-        if (r.media.size() > 1) {
+-            Button saveAll = primaryButton("保存全部（" + r.media.size() + "）");
+-            saveAll.setOnClickListener(v -> saveAll(r, saveAll));
+-            LinearLayout.LayoutParams sap = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48));
+-            sap.topMargin = dp(10);
+-            resultBox.addView(saveAll, sap);
+-        }
+-
+-        for (int i = 0; i < r.media.size(); i++) addMediaCard(r.media.get(i), i);
+     }
+ 
+     private void addMediaCard(MediaItem item, int index) {
+@@ -406,7 +455,7 @@
+ 
+         Button left;
+         if (item.extractsAudioTrack()) {
+-            left = secondaryButton("打开下载");
++            left = secondaryButton("查看文件");
+             left.setOnClickListener(v -> openDownloadsFolder());
+         } else {
+             left = secondaryButton("复制直链");
+@@ -464,21 +513,21 @@
+         return null;
+     }
+ 
+-    private void startSubtitle(MediaItem source, String title, Button button) {
++    private void startSubtitle(MediaItem source, String title, Button button, TextView subtitleState) {
+         if (subtitleBusy) return;
+         if (!WhisperModelManager.isReady(this)) {
+             new AlertDialog.Builder(this)
+                     .setTitle("首次下载字幕模型")
+                     .setMessage("本地字幕使用 Whisper Small Q5，多语言模型约 190 MB。只需下载一次，模型保存在应用内部；后续转写可以离线完成，也不会申请存储权限。")
+                     .setNegativeButton("取消", null)
+-                    .setPositiveButton("下载并提取", (d, w) -> runSubtitle(source, title, button))
++                    .setPositiveButton("下载并提取", (d, w) -> runSubtitle(source, title, button, subtitleState))
+                     .show();
+             return;
+         }
+-        runSubtitle(source, title, button);
++        runSubtitle(source, title, button, subtitleState);
+     }
+ 
+-    private void runSubtitle(MediaItem source, String title, Button button) {
++    private void runSubtitle(MediaItem source, String title, Button button, TextView subtitleState) {
+         if (subtitleBusy) return;
+         subtitleBusy = true;
+         button.setEnabled(false);
+@@ -486,6 +535,13 @@
+         button.setText("准备字幕…");
+         parseButton.setEnabled(false);
+         status.setText("正在准备本地字幕识别…");
++        subtitleState.setText("准备中…");
++
++        final long[] modelStart = {0L};
++        final long[] modelStartBytes = {0L};
++        final long[] decodeStart = {0L};
++        final long[] transcribeStart = {0L};
++        final long[] audioDurationMs = {0L};
+ 
+         executor.execute(() -> {
+             try {
+@@ -496,24 +552,90 @@
+                             if (text.contains("转写")) button.setText("转写中…");
+                             else if (text.contains("保存")) button.setText("保存字幕…");
+                             else if (text.contains("校验")) button.setText("校验模型…");
++                            if (!text.contains("转写")) subtitleState.setText(text);
+                         });
+                     }
+ 
+-                    @Override public void onModelProgress(int percent) {
+-                        main.post(() -> button.setText("模型 " + percent + "%"));
++                    @Override public void onModelProgress(int percent, long downloaded, long total) {
++                        long now = SystemClock.elapsedRealtime();
++                        if (modelStart[0] == 0L) {
++                            modelStart[0] = now;
++                            modelStartBytes[0] = downloaded;
++                        }
++                        long deltaBytes = Math.max(0L, downloaded - modelStartBytes[0]);
++                        long elapsed = Math.max(1L, now - modelStart[0]);
++                        long speed = deltaBytes * 1000L / elapsed;
++                        long remainMs = speed > 0 ? Math.max(0L, total - downloaded) * 1000L / speed : -1L;
++                        String line = "下载模型 " + percent + "% · " + formatMb(downloaded) + "/" + formatMb(total)
++                                + (remainMs >= 0 ? " · 预计剩余 " + formatEta(remainMs) : " · 正在测速…");
++                        main.post(() -> {
++                            button.setText("模型 " + percent + "%");
++                            subtitleState.setText(line);
++                            status.setText(line);
++                        });
+                     }
+ 
+                     @Override public void onDecodeProgress(int percent) {
+-                        main.post(() -> button.setText("解码 " + percent + "%"));
++                        long now = SystemClock.elapsedRealtime();
++                        if (decodeStart[0] == 0L) decodeStart[0] = now;
++                        long elapsed = Math.max(1L, now - decodeStart[0]);
++                        long remain = percent > 0 ? elapsed * (100L - percent) / percent : -1L;
++                        String line = "解码音频 " + percent + "%" + (remain >= 0 ? " · 预计剩余 " + formatEta(remain) : "");
++                        main.post(() -> {
++                            button.setText("解码 " + percent + "%");
++                            subtitleState.setText(line);
++                        });
++                    }
++
++                    @Override public void onTranscribeStart(long durationMs) {
++                        audioDurationMs[0] = durationMs;
++                        transcribeStart[0] = SystemClock.elapsedRealtime();
++                        float rtf = getSharedPreferences("subtitle_perf", MODE_PRIVATE).getFloat("small_q5_rtf", 0f);
++                        long predicted = rtf > 0.05f ? (long) (durationMs * rtf) : -1L;
++                        String line = "音频 " + formatEta(durationMs) + " · 本地转写"
++                                + (predicted > 0 ? " · 预计约 " + formatEta(predicted) : " · 正在测速…");
++                        main.post(() -> {
++                            button.setText("转写中…");
++                            subtitleState.setText(line);
++                            status.setText(line);
++                        });
++                    }
++
++                    @Override public void onTranscribeProgress(int percent) {
++                        long now = SystemClock.elapsedRealtime();
++                        long elapsed = transcribeStart[0] > 0 ? Math.max(1L, now - transcribeStart[0]) : 0L;
++                        long remain = percent > 0 && percent < 100 ? elapsed * (100L - percent) / percent : 0L;
++                        String line = "转写 " + percent + "%"
++                                + (percent > 0 && percent < 100 ? " · 预计剩余 " + formatEta(remain) : (percent == 0 ? " · 正在测速…" : ""));
++                        main.post(() -> {
++                            button.setText("字幕 " + percent + "%");
++                            subtitleState.setText(line);
++                            status.setText(line);
++                        });
+                     }
+                 });
++
++                long transcribeElapsed = transcribeStart[0] > 0 ? Math.max(1L, SystemClock.elapsedRealtime() - transcribeStart[0]) : 0L;
++                if (transcribeElapsed > 0 && audioDurationMs[0] > 0) {
++                    float newRtf = transcribeElapsed / (float) audioDurationMs[0];
++                    if (newRtf > 0.05f && newRtf < 50f) {
++                        float oldRtf = getSharedPreferences("subtitle_perf", MODE_PRIVATE).getFloat("small_q5_rtf", 0f);
++                        float saved = oldRtf > 0.05f ? oldRtf * 0.65f + newRtf * 0.35f : newRtf;
++                        getSharedPreferences("subtitle_perf", MODE_PRIVATE).edit().putFloat("small_q5_rtf", saved).apply();
++                    }
++                }
++
+                 main.post(() -> {
+                     subtitleBusy = false;
+-                    button.setText("已提取字幕");
++                    button.setText("已生成字幕");
+                     button.setEnabled(false);
+                     button.setAlpha(0.65f);
+                     parseButton.setEnabled(true);
+-                    status.setText("字幕已生成：SRT + TXT 已保存到系统 Download/下载目录"
++                    String done = "完成" + (audioDurationMs[0] > 0 ? " · 音频 " + formatEta(audioDurationMs[0]) : "")
++                            + (transcribeElapsed > 0 ? " · 转写用时 " + formatEta(transcribeElapsed) : "")
++                            + " · SRT + TXT 已保存";
++                    subtitleState.setText(done);
++                    status.setText("字幕已生成到系统 Download/下载目录"
+                             + (output.detectedLanguage.isBlank() ? "" : " · 语言 " + output.detectedLanguage));
+                     showSubtitleResult(output);
+                 });
+@@ -524,12 +646,29 @@
+                     button.setEnabled(true);
+                     button.setAlpha(1f);
+                     parseButton.setEnabled(true);
+-                    status.setText("字幕提取失败：" + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
++                    String message = "字幕提取失败：" + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
++                    subtitleState.setText(message);
++                    status.setText(message);
+                 });
+             }
+         });
+     }
+ 
++    private static String formatEta(long ms) {
++        long sec = Math.max(0L, (ms + 500L) / 1000L);
++        if (sec < 60L) return sec + "秒";
++        long min = sec / 60L;
++        long rem = sec % 60L;
++        if (min < 60L) return rem == 0 ? min + "分钟" : min + "分" + rem + "秒";
++        long h = min / 60L;
++        long m = min % 60L;
++        return h + "小时" + (m == 0 ? "" : m + "分");
++    }
++
++    private static String formatMb(long bytes) {
++        return Math.max(0L, bytes) / (1024L * 1024L) + " MB";
++    }
++
