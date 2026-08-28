@@ -1,0 +1,26 @@
+diff --git a/app/src/main/jni/whisper/CMakeLists.txt b/app/src/main/jni/whisper/CMakeLists.txt
+index 69e9a6f..06474c4 100644
+--- a/app/src/main/jni/whisper/CMakeLists.txt
++++ b/app/src/main/jni/whisper/CMakeLists.txt
+@@ -20,6 +20,7 @@ FetchContent_Declare(ggml SOURCE_DIR ${WHISPER_LIB_DIR}/ggml)
+ FetchContent_MakeAvailable(ggml)
+ 
+ target_link_libraries(whisper ${LOG_LIB} android ggml)
++target_compile_definitions(whisper PRIVATE WHISPER_VERSION=\"1.9.1\")
+ target_compile_definitions(whisper PUBLIC GGML_USE_CPU)
+ target_compile_options(whisper PRIVATE -O3 -fvisibility=hidden -fvisibility-inlines-hidden -ffunction-sections -fdata-sections)
+ 
+diff --git a/app/src/main/jni/whisper/jni.c b/app/src/main/jni/whisper/jni.c
+index de371a0..c37ea11 100644
+--- a/app/src/main/jni/whisper/jni.c
++++ b/app/src/main/jni/whisper/jni.c
+@@ -14,7 +14,8 @@ Java_com_example_mediaparser_subtitle_WhisperLib_initContext(
+         JNIEnv * env, jclass clazz, jstring model_path_str) {
+     (void) clazz;
+     const char * model_path = (*env)->GetStringUTFChars(env, model_path_str, NULL);
+-    struct whisper_context * context = whisper_init_from_file(model_path);
++    struct whisper_context_params params = whisper_context_default_params();
++    struct whisper_context * context = whisper_init_from_file_with_params(model_path, params);
+     (*env)->ReleaseStringUTFChars(env, model_path_str, model_path);
+     return (jlong) context;
+ }
