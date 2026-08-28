@@ -1,0 +1,139 @@
+diff --git a/app/build.gradle b/app/build.gradle
+index 924f3a5..801a169 100644
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -8,10 +8,10 @@ android {
+ 
+     defaultConfig {
+         applicationId 'com.example.mediaparser'
+-        minSdk 26
++        minSdk 29
+         targetSdk 35
+-        versionCode 5
+-        versionName '0.1.4'
++        versionCode 6
++        versionName '0.1.5'
+     }
+ 
+     buildTypes {
+diff --git a/app/src/main/AndroidManifest.xml b/app/src/main/AndroidManifest.xml
+index ff1584e..4503d86 100644
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -1,6 +1,5 @@
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+     <uses-permission android:name="android.permission.INTERNET" />
+-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+ 
+     <application
+         android:allowBackup="true"
+diff --git a/app/src/main/java/com/example/mediaparser/MainActivity.java b/app/src/main/java/com/example/mediaparser/MainActivity.java
+index 084e517..b78eedb 100644
+--- a/app/src/main/java/com/example/mediaparser/MainActivity.java
++++ b/app/src/main/java/com/example/mediaparser/MainActivity.java
+@@ -355,7 +355,7 @@ public final class MainActivity extends Activity {
+ 
+         if (r.media.size() > 1) {
+             Button saveAll = primaryButton("保存全部（" + r.media.size() + "）");
+-            saveAll.setOnClickListener(v -> saveAll(r));
++            saveAll.setOnClickListener(v -> saveAll(r, saveAll));
+             LinearLayout.LayoutParams sap = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48));
+             sap.topMargin = dp(10);
+             resultBox.addView(saveAll, sap);
+@@ -384,8 +384,8 @@ public final class MainActivity extends Activity {
+ 
+         Button left;
+         if (item.extractsAudioTrack()) {
+-            left = secondaryButton("打开文件夹");
+-            left.setOnClickListener(v -> openAudioFolder());
++            left = secondaryButton("打开下载");
++            left.setOnClickListener(v -> openDownloadsFolder());
+         } else {
+             left = secondaryButton("复制直链");
+             left.setOnClickListener(v -> copy(item.url));
+@@ -397,7 +397,7 @@ public final class MainActivity extends Activity {
+         else if (item.type == MediaItem.Type.VIDEO) saveLabel = "保存视频";
+         else saveLabel = "保存图片";
+         Button save = secondaryButton(saveLabel);
+-        save.setOnClickListener(v -> saveOne(item, currentResult == null ? "media" : currentResult.title));
++        save.setOnClickListener(v -> saveOne(item, currentResult == null ? "media" : currentResult.title, save, saveLabel));
+         actions.addView(left, new LinearLayout.LayoutParams(0, dp(44), 1f));
+         LinearLayout.LayoutParams sv = new LinearLayout.LayoutParams(0, dp(44), 1f);
+         sv.setMarginStart(dp(8));
+@@ -422,21 +422,38 @@ public final class MainActivity extends Activity {
+         status.setText("");
+     }
+ 
+-    private void saveOne(MediaItem item, String title) {
+-        status.setText(item.extractsAudioTrack() ? "正在下载视频并无损提取音轨…" : "正在保存 " + item.label + "…");
++    private void saveOne(MediaItem item, String title, Button button, String idleLabel) {
++        boolean extracting = item.extractsAudioTrack();
++        button.setEnabled(false);
++        button.setAlpha(0.55f);
++        button.setText(extracting ? "提取中…" : "下载中…");
++        status.setText(extracting ? "正在下载视频并无损提取音轨…" : "正在保存 " + item.label + "…");
+         executor.execute(() -> {
+             try {
+-                String where = FileSaver.save(this, item, title);
+-                main.post(() -> status.setText(item.extractsAudioTrack()
+-                        ? "音频已提取：内部存储/Music/MediaParser"
+-                        : "已保存 " + item.label + " 到系统相册/媒体库"));
++                FileSaver.save(this, item, title);
++                main.post(() -> {
++                    button.setText(extracting ? "已提取" : "已下载");
++                    button.setEnabled(false);
++                    button.setAlpha(0.65f);
++                    status.setText(extracting
++                            ? "音频已提取到系统 Download/下载目录"
++                            : "已保存 " + item.label + " 到系统 Download/下载目录");
++                });
+             } catch (Exception e) {
+-                main.post(() -> status.setText("保存失败：" + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage())));
++                main.post(() -> {
++                    button.setText("重试");
++                    button.setEnabled(true);
++                    button.setAlpha(1f);
++                    status.setText("保存失败：" + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
++                });
+             }
+         });
+     }
+ 
+-    private void saveAll(ParseResult result) {
++    private void saveAll(ParseResult result, Button button) {
++        button.setEnabled(false);
++        button.setAlpha(0.55f);
++        button.setText("保存中…");
+         status.setText("正在保存全部媒体…");
+         executor.execute(() -> {
+             int ok = 0;
+@@ -451,7 +468,19 @@ public final class MainActivity extends Activity {
+             }
+             int saved = ok;
+             String error = lastError;
+-            main.post(() -> status.setText(saved == result.media.size() ? "已保存全部 " + saved + " 个媒体文件" : "已保存 " + saved + "/" + result.media.size() + (error.isBlank() ? "" : "，最后错误：" + error)));
++            main.post(() -> {
++                if (saved == result.media.size()) {
++                    button.setText("已保存全部");
++                    button.setEnabled(false);
++                    button.setAlpha(0.65f);
++                    status.setText("已保存全部 " + saved + " 个媒体文件到系统 Download/下载目录");
++                } else {
++                    button.setText("已处理 " + saved + "/" + result.media.size());
++                    button.setEnabled(false);
++                    button.setAlpha(0.65f);
++                    status.setText("已保存 " + saved + "/" + result.media.size() + (error.isBlank() ? "" : "，最后错误：" + error) + "。可在下方单项重试失败文件。");
++                }
++            });
+         });
+     }
+ 
+@@ -504,29 +533,26 @@ public final class MainActivity extends Activity {
+     }
+ 
+ 
+-    private void openAudioFolder() {
++    private void openDownloadsFolder() {
+         Uri folderUri = DocumentsContract.buildDocumentUri(
+                 "com.android.externalstorage.documents",
+-                "primary:Music/MediaParser"
