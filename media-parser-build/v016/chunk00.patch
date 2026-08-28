@@ -1,0 +1,244 @@
+diff --git a/.github/workflows/build-apk.yml b/.github/workflows/build-apk.yml
+index fbd49af..4e99bb9 100644
+--- a/.github/workflows/build-apk.yml
++++ b/.github/workflows/build-apk.yml
+@@ -15,15 +15,24 @@ jobs:
+           distribution: temurin
+           java-version: '17'
+       - uses: android-actions/setup-android@v3
++      - name: Install Android SDK / NDK / CMake
++        run: |
++          yes | sdkmanager --licenses >/dev/null || true
++          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;25.2.9519653' 'cmake;3.22.1'
++      - name: Fetch whisper.cpp v1.9.1
++        run: git clone --depth 1 --branch v1.9.1 https://github.com/ggml-org/whisper.cpp third_party/whisper.cpp
+       - uses: gradle/actions/setup-gradle@v4
+         with:
+           gradle-version: '8.9'
+-      - name: Install Android SDK 35
+-        run: yes | sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+       - name: Build debug APK
+         run: gradle :app:assembleDebug --stacktrace
++      - name: Verify native subtitle engine
++        run: |
++          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -q 'lib/arm64-v8a/libwhisper.so'
++          grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml
++          test "$(grep -c '<uses-permission' app/src/main/AndroidManifest.xml)" -eq 1
+       - uses: actions/upload-artifact@v4
+         with:
+-          name: MediaParser-debug-apk
++          name: MediaParser-v0.1.6-debug
+           path: app/build/outputs/apk/debug/app-debug.apk
+           if-no-files-found: error
+diff --git a/README.md b/README.md
+index 3a4bf53..6146af3 100644
+--- a/README.md
++++ b/README.md
+@@ -1,90 +1,17 @@
+-# 媒体解析器 Android v0.1
++# MediaParser v0.1.6
+ 
+-一个轻量 Android App：把抖音 / 小红书 / 快手 / B站 / 微博的分享文案或链接粘贴进去，或从这些 App 的系统分享菜单直接发送到“媒体解析器”，自动识别平台并尝试提取媒体直链。
++Android 10+ 社媒媒体解析器：抖音、小红书、快手、B站、微博。
+ 
+-## v0.1 已实现
++## 主要能力
++- 分享文案 / 链接解析
++- 视频、图片、音频保存到系统 Download
++- 视频完整音轨无损提取为 M4A
++- 本地字幕：Whisper Small Q5（多语言）→ SRT + TXT
++- 字幕模型首次使用约 190 MB，保存在应用私有目录，后续可离线转写
++- 零运行时权限；Manifest 只声明普通 INTERNET 权限
++- 下载 / 提取按钮处理中自动锁定，避免重复点击
+ 
+-- 首页粘贴“完整分享文案”或 URL
+-- Android `ACTION_SEND` 分享入口：从社媒 App 分享到媒体解析器后自动解析
+-- Android `PROCESS_TEXT`：选中文字后可交给媒体解析器
+-- 平台识别：抖音 / 小红书 / 快手 / B站 / 微博
+-- 抖音：短链重定向、ttwid 匿名握手、多 UA、`_ROUTER_DATA` / `RENDER_DATA` / SSR 数据、视频 / 图文 / 音频
+-- 小红书：xhslink 短链、`__INITIAL_STATE__`、新版 `noteDetailMap`、视频 / 图集
+-- 快手：短链跳转、常见页面媒体字段提取
+-- B站：普通 BV / av 视频，读取公开视频信息与 `playurl` 直链（番剧 v0.1 暂不支持）
+-- 微博：游客凭据流程、tv component、多清晰度视频、m.weibo.cn 视频 / 图集
+-- 解析结果显示真实媒体 URL
+-- 复制直链
+-- 单个保存 / 保存全部
+-- Android 10+ 通过 MediaStore 保存到：
+-  - 图片：`Pictures/MediaParser`
+-  - 视频：`Movies/MediaParser`
+-  - 音频：`Music/MediaParser`
++## 本地字幕
++构建使用 whisper.cpp v1.9.1。模型运行时从 Hugging Face `ggerganov/whisper.cpp` 下载 `ggml-small-q5_1.bin`，并校验 SHA-256。
+ 
+-## 架构
+-
+-```text
+-MainActivity
+-  ├─ LinkExtractor        分享文字 → URL → 平台
+-  ├─ ParserRegistry
+-  │   ├─ DouyinParser
+-  │   ├─ XhsParser
+-  │   ├─ KuaishouParser
+-  │   ├─ BilibiliParser
+-  │   └─ WeiboParser
+-  └─ FileSaver            媒体直链 → 系统媒体库
+-```
+-
+-没有接入广告、账号系统、埋点或第三方“万能解析 API”。解析器直接跟目标平台的公开分享页面 / 公开接口交互。平台随时可能改页面结构或加强风控，因此解析失败会保留具体错误信息，便于继续修解析器。
+-
+-## 构建
+-
+-- Android Studio 打开项目根目录即可。
+-- JDK 17+
+-- compileSdk / targetSdk 35
+-- minSdk 26
+-- Android Gradle Plugin 8.7.3
+-
+-项目自身不依赖 AndroidX、Compose 或第三方网络库。
+-
+-命令行有 Gradle 8.9+ 时：
+-
+-```bash
+-gradle :app:assembleDebug
+-```
+-
+-APK 输出：
+-
+-```text
+-app/build/outputs/apk/debug/app-debug.apk
+-```
+-
+-## 当前测试
+-
+-本次生成时已完成：
+-
+-- 分享文字 / URL 平台识别回归：24 / 24 PASS
+-- Java 主代码 + 解析器语法 / 类型 smoke compile：PASS（使用本地 Android / org.json 类型桩）
+-- XML well-formedness：PASS
+-
+-受当前本地执行容器无 Android SDK、无外网 DNS 的限制，本地不能直接运行 Android Gradle build；项目附带 GitHub Actions 构建方式用于生成 debug APK。
+-
+-## 已知限制
+-
+-- 平台解析依赖实时分享页面与接口，会受风控、地区、作品隐私状态影响。
+-- B站 v0.1 只处理普通 BV / av 视频，不处理番剧。
+-- 小红书 Live Photo 的成对静态图 / 动态视频还未单独标注为 Live Photo；普通视频与图集已支持。
+-- 快手当前以页面内媒体字段为主，风控强时可能失败。
+-- Android 8 / 9 保存公共目录需要运行时存储权限；主要真机目标 Android 10+ 不需要该权限。
+-
+-仅保存你有权下载和使用的内容。
+-
+-## v0.1.3 平台化音频策略
+-
+-- 抖音：同时提供视频完整音轨（从 MP4 无损拆出 M4A）和平台原声/配乐直链（若页面提供）。
+-- B站：优先下载 DASH 中最高码率的独立音频流，失败时再从合并视频抽取 M4A。
+-- 小红书：普通视频提供完整音轨 M4A；图文与 Live Photo 不默认生成音频条目。
+-- 快手：从解析到的视频文件无损抽取完整音轨 M4A。
+-- 微博：从解析到的视频文件无损抽取完整音轨 M4A。
+-
+-“无损抽取”只重新封装音轨，不进行二次编码；若源视频使用 Android MediaMuxer 不支持的音频编码，App 会给出明确错误而不是静默转码。
++字幕输出固定写入系统 `Download` 目录，不提供自定义保存路径。
+diff --git a/app/build.gradle b/app/build.gradle
+index 801a169..6d37699 100644
+--- a/app/build.gradle
++++ b/app/build.gradle
+@@ -5,22 +5,46 @@ plugins {
+ android {
+     namespace 'com.example.mediaparser'
+     compileSdk 35
++    ndkVersion '25.2.9519653'
+ 
+     defaultConfig {
+         applicationId 'com.example.mediaparser'
+         minSdk 29
+         targetSdk 35
+-        versionCode 6
+-        versionName '0.1.5'
++        versionCode 7
++        versionName '0.1.6'
++
++        ndk {
++            abiFilters 'arm64-v8a'
++        }
++        externalNativeBuild {
++            cmake {
++                arguments '-DCMAKE_BUILD_TYPE=Release'
++            }
++        }
+     }
+ 
+     buildTypes {
++        debug {
++            externalNativeBuild {
++                cmake {
++                    arguments '-DCMAKE_BUILD_TYPE=Release'
++                }
++            }
++        }
+         release {
+             minifyEnabled false
+             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+         }
+     }
+ 
++    externalNativeBuild {
++        cmake {
++            path 'src/main/jni/whisper/CMakeLists.txt'
++            version '3.22.1'
++        }
++    }
++
+     compileOptions {
+         sourceCompatibility JavaVersion.VERSION_17
+         targetCompatibility JavaVersion.VERSION_17
+ diff --git a/app/src/main/java/com/example/mediaparser/MainActivity.java b/app/src/main/java/com/example/mediaparser/MainActivity.java
+index b78eedb..52a9e0a 100644
+--- a/app/src/main/java/com/example/mediaparser/MainActivity.java
++++ b/app/src/main/java/com/example/mediaparser/MainActivity.java
+@@ -1,6 +1,7 @@
+ package com.example.mediaparser;
+ 
+ import android.app.Activity;
++import android.app.AlertDialog;
+ import android.content.ClipData;
+ import android.content.ClipboardManager;
+ import android.content.Context;
+@@ -34,6 +35,9 @@ import com.example.mediaparser.model.ParseResult;
+ import com.example.mediaparser.parser.ParseException;
+ import com.example.mediaparser.parser.ParserRegistry;
+ import com.example.mediaparser.util.FileSaver;
++import com.example.mediaparser.subtitle.SubtitleExtractor;
++import com.example.mediaparser.subtitle.SubtitleOutput;
++import com.example.mediaparser.subtitle.WhisperModelManager;
+ 
+ import org.json.JSONArray;
+ import org.json.JSONObject;
+@@ -63,6 +67,8 @@ public final class MainActivity extends Activity {
+     private LinearLayout resultBox;
+     private ParseResult currentResult;
+     private boolean parsing;
++    private boolean subtitleBusy;
++    private View subtitleResultPanel;
+ 
+     @Override
+     protected void onCreate(Bundle savedInstanceState) {
+@@ -325,6 +331,7 @@ public final class MainActivity extends Activity {
+         parseButton.setText("重新解析");
+         status.setText("解析成功 · " + r.platform + " · 找到 " + r.media.size() + " 个媒体文件");
+         resultBox.removeAllViews();
++        subtitleResultPanel = null;
+         resultBox.setVisibility(View.VISIBLE);
+ 
+         LinearLayout info = panel();
+@@ -353,6 +360,21 @@ public final class MainActivity extends Activity {
+         }
+         resultBox.addView(info);
+ 
++        MediaItem subtitleSource = findSubtitleSource(r);
++        if (subtitleSource != null) {
++            LinearLayout subtitlePanel = panel();
++            LinearLayout.LayoutParams stp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
++            stp.topMargin = dp(10);
++            resultBox.addView(subtitlePanel, stp);
++            subtitlePanel.addView(text("本地字幕", 16, TEXT, true));
++            TextView sh = text("Whisper Small Q5 · 首次约 190 MB 模型 · 后续可离线 · 自动生成 SRT + TXT", 12, MUTED, false);
