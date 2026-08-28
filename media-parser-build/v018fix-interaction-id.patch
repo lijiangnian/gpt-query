@@ -1,0 +1,26 @@
+--- a/app/src/main/java/com/example/mediaparser/subtitle/SubtitleExtractor.java
++++ b/app/src/main/java/com/example/mediaparser/subtitle/SubtitleExtractor.java
+@@ -188,7 +188,7 @@
+ 
+         for (int i = 0; i < 120; i++) {
+             Thread.sleep(1000L);
+-            HttpURLConnection poll = open(API + "/v1beta/interactions/" + id, "GET", key);
++            HttpURLConnection poll = open(API + "/v1beta/interactions/" + interactionId(id), "GET", key);
+             int pc = poll.getResponseCode();
+             String pb = readBody(poll);
+             poll.disconnect();
+@@ -384,6 +384,14 @@
+         }
+     }
+ 
++
++    private static String interactionId(String raw) {
++        if (raw == null) return "";
++        String id = raw.trim();
++        int slash = id.lastIndexOf('/');
++        return slash >= 0 ? id.substring(slash + 1) : id;
++    }
++
+     private static Exception apiError(int code, String body) {
+         String message = "";
+         try {
