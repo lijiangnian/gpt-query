@@ -59,6 +59,7 @@ jobs:
           base64 -d /tmp/v018overlay.b64 > /tmp/v018overlay.zip
           echo "da54c2825ce77a87237f5a987e36ed37760921b96410c8ab1d9a0eff4212a0f5  /tmp/v018overlay.zip" | sha256sum -c -
           unzip -qo /tmp/v018overlay.zip -d MediaParserApp
+          patch -d MediaParserApp -p1 < media-parser-build/v018fix-interaction-id.patch
           rm -f MediaParserApp/app/src/main/java/com/example/mediaparser/subtitle/AudioDecoder.java
           rm -f MediaParserApp/app/src/main/java/com/example/mediaparser/subtitle/WhisperLib.java
           rm -f MediaParserApp/app/src/main/java/com/example/mediaparser/subtitle/WhisperModelManager.java
@@ -66,6 +67,7 @@ jobs:
           grep -q "versionName '0.1.8'" MediaParserApp/app/build.gradle
           grep -q 'gemini-3.5-transcribe' MediaParserApp/app/src/main/java/com/example/mediaparser/subtitle/SubtitleExtractor.java
           grep -q '/v1beta/interactions' MediaParserApp/app/src/main/java/com/example/mediaparser/subtitle/SubtitleExtractor.java
+          grep -q 'interactionId(id)' MediaParserApp/app/src/main/java/com/example/mediaparser/subtitle/SubtitleExtractor.java
           grep -q 'timestamp_granularities' MediaParserApp/app/src/main/java/com/example/mediaparser/subtitle/SubtitleExtractor.java
           grep -q 'AndroidKeyStore' MediaParserApp/app/src/main/java/com/example/mediaparser/subtitle/GeminiKeyStore.java
           grep -q 'Gemini 云端字幕' MediaParserApp/app/src/main/java/com/example/mediaparser/MainActivity.java
