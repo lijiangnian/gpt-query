@@ -1,0 +1,85 @@
++                "primary:Download"
+         );
+         try {
+             Intent view = new Intent(Intent.ACTION_VIEW);
+             view.setDataAndType(folderUri, DocumentsContract.Document.MIME_TYPE_DIR);
+-            view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
++            view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+             startActivity(view);
+             return;
+         } catch (Exception ignored) {
+         }
+ 
+         try {
+-            Intent tree = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+-                tree.putExtra("android.provider.extra.INITIAL_URI", folderUri);
+-            }
+-            startActivity(tree);
+-            toast("音频目录：Music/MediaParser");
++            Intent view = new Intent(Intent.ACTION_VIEW);
++            view.setDataAndType(Uri.parse("content://downloads/public_downloads"), "*/*");
++            startActivity(view);
+         } catch (Exception e) {
+-            toast("请在文件管理中打开：Music/MediaParser");
++            toast("文件已保存到系统 Download/下载目录");
+         }
+     }
+ 
+diff --git a/app/src/main/java/com/example/mediaparser/util/FileSaver.java b/app/src/main/java/com/example/mediaparser/util/FileSaver.java
+index 867773a..130b540 100644
+--- a/app/src/main/java/com/example/mediaparser/util/FileSaver.java
++++ b/app/src/main/java/com/example/mediaparser/util/FileSaver.java
+@@ -76,9 +76,9 @@ public final class FileSaver {
+                 ContentValues values = new ContentValues();
+                 values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+                 values.put(MediaStore.MediaColumns.MIME_TYPE, "audio/mp4");
+-                values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/MediaParser");
++                values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                 values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+-                Uri uri = resolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values);
++                Uri uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                 if (uri == null) throw new IllegalStateException("系统无法创建音频文件");
+                 try (ParcelFileDescriptor pfd = resolver.openFileDescriptor(uri, "rw")) {
+                     if (pfd == null) throw new IllegalStateException("系统无法打开音频文件");
+@@ -91,7 +91,7 @@ public final class FileSaver {
+                 }
+             }
+ 
+-            File folder = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "MediaParser");
++            File folder = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+             if (!folder.exists() && !folder.mkdirs()) throw new IllegalStateException("无法创建音乐目录");
+             File out = new File(folder, fileName);
+             remuxAudio(temp, out);
+@@ -233,16 +233,12 @@ public final class FileSaver {
+         values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+         values.put(MediaStore.MediaColumns.MIME_TYPE, mime(item));
+         if (pending) values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+-        if (item.type == MediaItem.Type.IMAGE) values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/MediaParser");
+-        else if (item.type == MediaItem.Type.AUDIO) values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/MediaParser");
+-        else values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/MediaParser");
++        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+         return values;
+     }
+ 
+     private static Uri collection(MediaItem item) {
+-        if (item.type == MediaItem.Type.IMAGE) return MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+-        if (item.type == MediaItem.Type.AUDIO) return MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+-        return MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
++        return MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+     }
+ 
+     private static void finishPending(ContentResolver resolver, Uri uri) {
+@@ -252,11 +248,7 @@ public final class FileSaver {
+     }
+ 
+     private static File legacyFolder(MediaItem item) {
+-        File base;
+-        if (item.type == MediaItem.Type.IMAGE) base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
+-        else if (item.type == MediaItem.Type.AUDIO) base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
+-        else base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES);
+-        return new File(base, "MediaParser");
++        return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+     }
+ 
+     private static String safeName(String baseName) {
