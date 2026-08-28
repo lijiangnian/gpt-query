@@ -14,12 +14,12 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Reconstruct source archive
+      - name: Reconstruct base source
         shell: bash
         run: |
           cat media-parser-build/chunk00.b64 media-parser-build/chunk01.b64 media-parser-build/chunk02.b64 media-parser-build/chunk03.b64 > MediaParserApp-source.zip.b64
@@ -59,66 +59,34 @@ jobs:
           sed -Ei 's/versionCode [0-9]+/versionCode 5/' MediaParserApp/app/build.gradle
           sed -Ei "s/versionName '[^']+'/versionName '0.1.4'/" MediaParserApp/app/build.gradle
 
-      - name: Apply v0.1.5 Download folder and button-state UX
+      - name: Apply stable v0.1.5 Download UX
         shell: bash
         run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          root = Path('MediaParserApp')
-
-          p = root / 'app/build.gradle'
-          s = p.read_text()
-          s = s.replace('minSdk 26', 'minSdk 29')
-          s = s.replace('versionCode 5', 'versionCode 6')
-          s = s.replace("versionName '0.1.4'", "versionName '0.1.5'")
-          p.write_text(s)
-
-          p = root / 'app/src/main/AndroidManifest.xml'
-          s = p.read_text().replace('    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />\n', '')
-          p.write_text(s)
-
-          p = root / 'app/src/main/java/com/example/mediaparser/util/FileSaver.java'
-          s = p.read_text()
-          s = s.replace('Environment.DIRECTORY_MUSIC + "/MediaParser"', 'Environment.DIRECTORY_DOWNLOADS')
-          s = s.replace('MediaStore.Audio.Media.EXTERNAL_CONTENT_URI', 'MediaStore.Downloads.EXTERNAL_CONTENT_URI')
-          s = s.replace('File folder = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "MediaParser");', 'File folder = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);')
-          s = s.replace('''        if (item.type == MediaItem.Type.IMAGE) values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/MediaParser");\n        else if (item.type == MediaItem.Type.AUDIO) values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/MediaParser");\n        else values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/MediaParser");''', '        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);')
-          s = s.replace('''    private static Uri collection(MediaItem item) {\n        if (item.type == MediaItem.Type.IMAGE) return MediaStore.Images.Media.EXTERNAL_CONTENT_URI;\n        if (item.type == MediaItem.Type.AUDIO) return MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;\n        return MediaStore.Video.Media.EXTERNAL_CONTENT_URI;\n    }''', '''    private static Uri collection(MediaItem item) {\n        return MediaStore.Downloads.EXTERNAL_CONTENT_URI;\n    }''')
-          s = s.replace('''    private static File legacyFolder(MediaItem item) {\n        File base;\n        if (item.type == MediaItem.Type.IMAGE) base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);\n        else if (item.type == MediaItem.Type.AUDIO) base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);\n        else base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES);\n        return new File(base, "MediaParser");\n    }''', '''    private static File legacyFolder(MediaItem item) {\n        return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);\n    }''')
-          p.write_text(s)
-
-          p = root / 'app/src/main/java/com/example/mediaparser/MainActivity.java'
-          s = p.read_text()
-          s = s.replace('saveAll.setOnClickListener(v -> saveAll(r));', 'saveAll.setOnClickListener(v -> saveAll(r, saveAll));')
-          s = s.replace('left = secondaryButton("打开文件夹");', 'left = secondaryButton("打开下载");')
-          s = s.replace('left.setOnClickListener(v -> openAudioFolder());', 'left.setOnClickListener(v -> openDownloadsFolder());')
-          s = s.replace('save.setOnClickListener(v -> saveOne(item, currentResult == null ? "media" : currentResult.title));', 'save.setOnClickListener(v -> saveOne(item, currentResult == null ? "media" : currentResult.title, save, saveLabel));')
-
-          old = '''    private void saveOne(MediaItem item, String title) {\n        status.setText(item.extractsAudioTrack() ? "正在下载视频并无损提取音轨…" : "正在保存 " + item.label + "…");\n        executor.execute(() -> {\n            try {\n                String where = FileSaver.save(this, item, title);\n                main.post(() -> status.setText(item.extractsAudioTrack()\n                        ? "音频已提取：内部存储/Music/MediaParser"\n                        : "已保存 " + item.label + " 到系统相册/媒体库"));\n            } catch (Exception e) {\n                main.post(() -> status.setText("保存失败：" + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage())));\n            }\n        });\n    }\n\n    private void saveAll(ParseResult result) {\n        status.setText("正在保存全部媒体…");\n        executor.execute(() -> {\n            int ok = 0;\n            String lastError = "";\n            for (MediaItem item : result.media) {\n                try {\n                    FileSaver.save(this, item, result.title);\n                    ok++;\n                } catch (Exception e) {\n                    lastError = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();\n                }\n            }\n            int saved = ok;\n            String error = lastError;\n            main.post(() -> status.setText(saved == result.media.size() ? "已保存全部 " + saved + " 个媒体文件" : "已保存 " + saved + "/" + result.media.size() + (error.isBlank() ? "" : "，最后错误：" + error)));\n        });\n    }'''
-
-          new = '''    private void saveOne(MediaItem item, String title, Button button, String idleLabel) {\n        boolean extracting = item.extractsAudioTrack();\n        button.setEnabled(false);\n        button.setAlpha(0.55f);\n        button.setText(extracting ? "提取中…" : "下载中…");\n        status.setText(extracting ? "正在下载视频并无损提取音轨…" : "正在保存 " + item.label + "…");\n        executor.execute(() -> {\n            try {\n                FileSaver.save(this, item, title);\n                main.post(() -> {\n                    button.setText(extracting ? "已提取" : "已下载");\n                    button.setEnabled(false);\n                    button.setAlpha(0.65f);\n                    status.setText(extracting\n                            ? "音频已提取到系统 Download/下载目录"\n                            : "已保存 " + item.label + " 到系统 Download/下载目录");\n                });\n            } catch (Exception e) {\n                main.post(() -> {\n                    button.setText("重试");\n                    button.setEnabled(true);\n                    button.setAlpha(1f);\n                    status.setText("保存失败：" + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));\n                });\n            }\n        });\n    }\n\n    private void saveAll(ParseResult result, Button button) {\n        button.setEnabled(false);\n        button.setAlpha(0.55f);\n        button.setText("保存中…");\n        status.setText("正在保存全部媒体…");\n        executor.execute(() -> {\n            int ok = 0;\n            String lastError = "";\n            for (MediaItem item : result.media) {\n                try {\n                    FileSaver.save(this, item, result.title);\n                    ok++;\n                } catch (Exception e) {\n                    lastError = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();\n                }\n            }\n            int saved = ok;\n            String error = lastError;\n            main.post(() -> {\n                if (saved == result.media.size()) {\n                    button.setText("已保存全部");\n                    button.setEnabled(false);\n                    button.setAlpha(0.65f);\n                    status.setText("已保存全部 " + saved + " 个媒体文件到系统 Download/下载目录");\n                } else {\n                    button.setText("已处理 " + saved + "/" + result.media.size());\n                    button.setEnabled(false);\n                    button.setAlpha(0.65f);\n                    status.setText("已保存 " + saved + "/" + result.media.size() + (error.isBlank() ? "" : "，最后错误：" + error) + "。可在下方单项重试失败文件。");\n                }\n            });\n        });\n    }'''
-          if old not in s:
-              raise SystemExit('save block not found')
-          s = s.replace(old, new)
-
-          start = s.index('    private void openAudioFolder() {')
-          end = s.index('    private void copy(String s) {', start)
-          folder = '''    private void openDownloadsFolder() {\n        Uri folderUri = DocumentsContract.buildDocumentUri(\n                "com.android.externalstorage.documents",\n                "primary:Download"\n        );\n        try {\n            Intent view = new Intent(Intent.ACTION_VIEW);\n            view.setDataAndType(folderUri, DocumentsContract.Document.MIME_TYPE_DIR);\n            view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);\n            startActivity(view);\n            return;\n        } catch (Exception ignored) {\n        }\n\n        try {\n            Intent view = new Intent(Intent.ACTION_VIEW);\n            view.setDataAndType(Uri.parse("content://downloads/public_downloads"), "*/*");\n            startActivity(view);\n        } catch (Exception e) {\n            toast("文件已保存到系统 Download/下载目录");\n        }\n    }\n\n'''
-          s = s[:start] + folder + s[end:]
-          p.write_text(s)
-          PY
-
-          grep -q 'minSdk 29' MediaParserApp/app/build.gradle
+          cat media-parser-build/v015patch/chunk00.patch media-parser-build/v015patch/chunk01.patch > /tmp/v015.patch
+          patch -d MediaParserApp -p1 < /tmp/v015.patch
           grep -q "versionName '0.1.5'" MediaParserApp/app/build.gradle
-          test "$(grep -c 'uses-permission' MediaParserApp/app/src/main/AndroidManifest.xml)" -eq 1
+          test "$(grep -c '<uses-permission' MediaParserApp/app/src/main/AndroidManifest.xml)" -eq 1
+          grep -q 'android.permission.INTERNET' MediaParserApp/app/src/main/AndroidManifest.xml
+
+      - name: Apply v0.1.6 local subtitle engine
+        shell: bash
+        run: |
+          cat media-parser-build/v016/chunk00.patch \
+              media-parser-build/v016/chunk01.patch \
+              media-parser-build/v016/chunk02.patch \
+              media-parser-build/v016/chunk03.patch \
+              media-parser-build/v016/chunk04.patch \
+              media-parser-build/v016/chunk05.patch \
+              media-parser-build/v016/chunk06.patch > /tmp/v016.patch
+          patch -d MediaParserApp -p1 < /tmp/v016.patch
+          grep -q "versionName '0.1.6'" MediaParserApp/app/build.gradle
+          grep -q 'abiFilters.*arm64-v8a' MediaParserApp/app/build.gradle
+          grep -q '提取字幕' MediaParserApp/app/src/main/java/com/example/mediaparser/MainActivity.java
+          grep -q 'ggml-small-q5_1.bin' MediaParserApp/app/src/main/java/com/example/mediaparser/subtitle/WhisperModelManager.java
+          grep -q 'MediaStore.Downloads.EXTERNAL_CONTENT_URI' MediaParserApp/app/src/main/java/com/example/mediaparser/subtitle/SubtitleSaver.java
+          test "$(grep -c '<uses-permission' MediaParserApp/app/src/main/AndroidManifest.xml)" -eq 1
           grep -q 'android.permission.INTERNET' MediaParserApp/app/src/main/AndroidManifest.xml
           ! grep -q 'WRITE_EXTERNAL_STORAGE' MediaParserApp/app/src/main/AndroidManifest.xml
-          grep -q 'MediaStore.Downloads.EXTERNAL_CONTENT_URI' MediaParserApp/app/src/main/java/com/example/mediaparser/util/FileSaver.java
-          grep -q 'Environment.DIRECTORY_DOWNLOADS' MediaParserApp/app/src/main/java/com/example/mediaparser/util/FileSaver.java
-          grep -q 'secondaryButton("打开下载")' MediaParserApp/app/src/main/java/com/example/mediaparser/MainActivity.java
-          grep -q 'button.setText(extracting ? "提取中…" : "下载中…")' MediaParserApp/app/src/main/java/com/example/mediaparser/MainActivity.java
-          grep -q 'button.setText(extracting ? "已提取" : "已下载")' MediaParserApp/app/src/main/java/com/example/mediaparser/MainActivity.java
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -129,11 +97,18 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android platform
+      - name: Install Android SDK NDK and CMake
         shell: bash
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;25.2.9519653" "cmake;3.22.1"
+
+      - name: Fetch whisper.cpp v1.9.1
+        shell: bash
+        run: |
+          mkdir -p MediaParserApp/third_party
+          git clone --depth 1 --branch v1.9.1 https://github.com/ggml-org/whisper.cpp MediaParserApp/third_party/whisper.cpp
+          test -f MediaParserApp/third_party/whisper.cpp/src/whisper.cpp
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -144,17 +119,20 @@ jobs:
         working-directory: MediaParserApp
         run: gradle :app:assembleDebug --stacktrace
 
-      - name: Verify APK
+      - name: Verify APK and native subtitle engine
         shell: bash
         run: |
-          test -s MediaParserApp/app/build/outputs/apk/debug/app-debug.apk
-          sha256sum MediaParserApp/app/build/outputs/apk/debug/app-debug.apk
-          ls -lh MediaParserApp/app/build/outputs/apk/debug/app-debug.apk
+          APK=MediaParserApp/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -l "$APK" | grep -q 'lib/arm64-v8a/libwhisper.so'
+          unzip -l "$APK" | grep -q 'lib/arm64-v8a/libggml'
+          sha256sum "$APK"
+          ls -lh "$APK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MediaParser-v0.1.5-debug
+          name: MediaParser-v0.1.6-debug
           path: MediaParserApp/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
@@ -184,7 +162,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MediaParser-v0.1.5-live-results
+          name: MediaParser-v0.1.6-live-results
           path: live-parser-results.txt
           if-no-files-found: warn
           retention-days: 7
