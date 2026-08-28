@@ -1,4 +1,73 @@
-threads=%d language=%s", (int) n_samples, params.n_threads, language);
+diff -ruN mp17_v016/app/src/main/java/com/example/mediaparser/util/FileSaver.java mp17/app/src/main/java/com/example/mediaparser/util/FileSaver.java
+--- mp17_v016/app/src/main/java/com/example/mediaparser/util/FileSaver.java	2026-08-28 10:33:07.000000000 +0000
++++ mp17/app/src/main/java/com/example/mediaparser/util/FileSaver.java	2026-08-28 11:17:13.794693133 +0000
+@@ -207,6 +207,7 @@
+                 c.disconnect();
+                 throw new IllegalStateException("媒体下载失败 HTTP " + status);
+             }
++            validateMediaResponse(item, current, c.getContentType());
+             try (InputStream in = c.getInputStream()) {
+                 byte[] buf = new byte[64 * 1024];
+                 int n;
+@@ -220,6 +221,21 @@
+         throw new IllegalStateException("媒体下载重定向过多");
+     }
+ 
++
++    private static void validateMediaResponse(MediaItem item, String url, String contentType) {
++        String lowerUrl = url == null ? "" : url.toLowerCase(Locale.ROOT);
++        int q = lowerUrl.indexOf('?');
++        if (q >= 0) lowerUrl = lowerUrl.substring(0, q);
++        String[] badExt = {".js", ".css", ".json", ".html", ".htm", ".svg", ".woff", ".woff2", ".ttf", ".map"};
++        for (String ext : badExt) {
++            if (lowerUrl.endsWith(ext)) throw new IllegalStateException("该地址实际不是媒体文件，已阻止保存");
++        }
++        String ct = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
++        if (ct.startsWith("text/") || ct.contains("javascript") || ct.contains("json") || ct.contains("xml")) {
++            throw new IllegalStateException("服务器返回的不是媒体文件（" + ct + "）");
++        }
++    }
++
+     private static String extension(MediaItem item) {
+         if (!item.preferredExtension.isBlank()) return item.preferredExtension;
+         String lower = item.url.toLowerCase(Locale.ROOT);
+diff -ruN mp17_v016/app/src/main/jni/whisper/jni.c mp17/app/src/main/jni/whisper/jni.c
+--- mp17_v016/app/src/main/jni/whisper/jni.c	2026-08-28 10:46:13.000000000 +0000
++++ mp17/app/src/main/jni/whisper/jni.c	2026-08-28 11:18:46.872729397 +0000
+@@ -9,12 +9,24 @@
+ #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
+ #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
+ 
++static volatile int g_transcribe_progress = 0;
++
++static void mediaparser_progress_callback(struct whisper_context * ctx, struct whisper_state * state, int progress, void * user_data) {
++    (void) ctx;
++    (void) state;
++    (void) user_data;
++    if (progress < 0) progress = 0;
++    if (progress > 100) progress = 100;
++    g_transcribe_progress = progress;
++}
++
+ JNIEXPORT jlong JNICALL
+ Java_com_example_mediaparser_subtitle_WhisperLib_initContext(
+         JNIEnv * env, jclass clazz, jstring model_path_str) {
+     (void) clazz;
+     const char * model_path = (*env)->GetStringUTFChars(env, model_path_str, NULL);
+     struct whisper_context_params params = whisper_context_default_params();
++    g_transcribe_progress = 0;
+     struct whisper_context * context = whisper_init_from_file_with_params(model_path, params);
+     (*env)->ReleaseStringUTFChars(env, model_path_str, model_path);
+     return (jlong) context;
+@@ -55,9 +67,13 @@
+     params.single_segment = false;
+     params.suppress_blank = true;
+     params.suppress_nst = true;
++    g_transcribe_progress = 0;
++    params.progress_callback = mediaparser_progress_callback;
++    params.progress_callback_user_data = NULL;
+ 
+     LOGI("whisper_full: samples=%d threads=%d language=%s", (int) n_samples, params.n_threads, language);
      const int rc = whisper_full(context, params, audio, n_samples);
 +    if (rc == 0) g_transcribe_progress = 100;
  
