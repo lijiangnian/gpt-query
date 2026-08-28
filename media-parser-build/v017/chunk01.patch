@@ -97,11 +97,10 @@ diff -ruN mp17_v016/app/src/main/java/com/example/mediaparser/XhsWebViewActivity
 diff -ruN mp17_v016/app/src/main/java/com/example/mediaparser/parser/XhsParser.java mp17/app/src/main/java/com/example/mediaparser/parser/XhsParser.java
 --- mp17_v016/app/src/main/java/com/example/mediaparser/parser/XhsParser.java	2026-08-27 21:29:30.000000000 +0000
 +++ mp17/app/src/main/java/com/example/mediaparser/parser/XhsParser.java	2026-08-28 11:18:46.872511920 +0000
-@@ -75,8 +75,9 @@
+@@ -75,7 +75,9 @@
                  }
              }
  
--            // Live Photo: imageList[].stream can contain the paired motion-video URL.
 -            if (images != null) {
 +            // Live Photo applies to image/live-photo notes. A normal video note can also expose
 +            // imageList as its cover, which must not create extra image/live media entries.
