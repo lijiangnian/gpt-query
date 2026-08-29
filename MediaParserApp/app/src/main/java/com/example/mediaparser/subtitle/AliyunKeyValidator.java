@@ -37,6 +37,10 @@ public final class AliyunKeyValidator {
         return validateModel(apiKey,workspace,Qwen3AsrTranscriber.MODEL);
     }
 
+    public static GeminiKeyValidator.Result validateParaformer(String apiKey,String workspace){
+        return validateModel(apiKey,workspace,TARGET_MODEL);
+    }
+
     static GeminiKeyValidator.Result validateModel(String apiKey, String workspace,String targetModel) {
         String key = apiKey == null ? "" : apiKey.trim();
         String ws = workspace == null ? "" : workspace.trim();

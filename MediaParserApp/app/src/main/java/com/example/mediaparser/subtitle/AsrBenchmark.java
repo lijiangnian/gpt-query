@@ -21,12 +21,16 @@ public final class AsrBenchmark {
     public static Score failure(String requested,long elapsedMs,Throwable error){return new Score(requested,"",elapsedMs,0,0,-1,-1,-1,safe(error));}
 
     public static String report(List<Score> scores,boolean hasReference){
-        StringBuilder b=new StringBuilder("MediaParser ASR 横评\n");b.append(hasReference?"CER/漏字率/时间戳误差使用用户提供的参考稿。\n":"没有参考稿：不伪造 CER、漏字率或时间戳误差；请粘贴硬字幕/OCR/SRT 后重跑。\n");
+        StringBuilder b=new StringBuilder("MediaParser ASR 横评\n");b.append(hasReference?"综合分：文字40% + 时间戳30% + 漏句15% + 速度10% + 稳定性5%。\n":"没有参考稿：不伪造 CER、漏字率、时间戳误差或综合分；请粘贴硬字幕/OCR/SRT 后重跑。\n");
         for(Score s:scores){b.append("\n").append(s.requested).append(" → ").append(s.error.isBlank()?s.actual:s.error).append('\n');if(!s.error.isBlank())continue;b.append("耗时：").append(time(s.elapsedMs)).append("；分段：").append(s.segments).append("；时间轴覆盖：").append(pct(s.coverage));if(s.cer>=0)b.append("；CER：").append(pct(s.cer)).append("；漏字率：").append(pct(s.deletionRate));if(s.timestampErrorMs>=0)b.append("；平均时间戳误差：").append(Math.round(s.timestampErrorMs)).append("ms");b.append('\n');}
+        if(hasReference){b.append("\n综合排名\n");ArrayList<Score> ranked=new ArrayList<>();for(Score s:scores)if(s.error.isBlank()&&s.cer>=0)ranked.add(s);ranked.sort((a,c)->Double.compare(weighted(c,scores),weighted(a,scores)));int i=1;for(Score s:ranked)b.append(i++).append(". ").append(s.requested).append("：").append(String.format(Locale.ROOT,"%.1f",weighted(s,scores))).append(" 分\n");}
         return b.toString();
     }
 
-    public static JSONObject json(List<Score> scores,boolean hasReference)throws Exception{JSONObject root=new JSONObject().put("schema","mediaparser-asr-benchmark-v1").put("reference_provided",hasReference);JSONArray a=new JSONArray();for(Score s:scores)a.put(s.json());return root.put("results",a);}
+    public static JSONObject json(List<Score> scores,boolean hasReference)throws Exception{JSONObject root=new JSONObject().put("schema","mediaparser-asr-benchmark-v2").put("reference_provided",hasReference).put("weights",new JSONObject().put("text_accuracy",.40).put("timestamp_accuracy",.30).put("deletion_accuracy",.15).put("speed",.10).put("stability",.05));JSONArray a=new JSONArray();for(Score s:scores){JSONObject x=s.json();if(hasReference&&s.error.isBlank()&&s.cer>=0)x.put("weighted_score",weighted(s,scores));a.put(x);}return root.put("results",a);}
+
+    /** 0-100. It is intentionally unavailable without a real reference transcript. */
+    public static double weighted(Score s,List<Score> all){if(s==null||!s.error.isBlank()||s.cer<0)return-1;double text=clamp(1-s.cer),deletion=clamp(1-s.deletionRate),timeline=s.timestampErrorMs<0?0:clamp(1-s.timestampErrorMs/2000d),stability=clamp(s.coverage);long fastest=Long.MAX_VALUE;for(Score x:all)if(x.error.isBlank()&&x.elapsedMs>0)fastest=Math.min(fastest,x.elapsedMs);double speed=fastest==Long.MAX_VALUE||s.elapsedMs<=0?0:clamp(fastest/(double)s.elapsedMs);return 100*(.40*text+.30*timeline+.15*deletion+.10*speed+.05*stability);}
 
     public static final class Score{
         public final String requested,actual,error;public final long elapsedMs;public final int segments;public final double coverage,cer,deletionRate,timestampErrorMs;
@@ -39,6 +43,7 @@ public final class AsrBenchmark {
     private static String chars(String s){return s==null?"":s.toLowerCase(Locale.ROOT).replaceAll("[\\p{P}\\p{S}\\s]+","");}
     private static String safe(Throwable e){String s=e==null?"未知错误":e.getMessage();return s==null?e.getClass().getSimpleName():s.replaceAll("[\\r\\n]+"," ");}
     private static String pct(double d){return String.format(Locale.ROOT,"%.1f%%",d*100);}
+    private static double clamp(double d){return Math.max(0,Math.min(1,d));}
     private static String time(long ms){return String.format(Locale.ROOT,"%.1fs",ms/1000d);}
     private static final class EditDistance{final int total,deletions,reference;EditDistance(int t,int d,int r){total=t;deletions=d;reference=r;}}
     private static final class RefSegment{final long start,end;RefSegment(long s,long e){start=s;end=e;}}

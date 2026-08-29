@@ -250,6 +250,11 @@ public final class MainActivity extends Activity {
         apiSettingsSection.setOrientation(LinearLayout.VERTICAL);
         apiSettingsSection.setPadding(0, dp(22), 0, 0);
         apiSettingsSection.addView(text("API Key 设置 · 本机加密保存", 15, TEXT, true));
+        Button diagnostics=primaryButton("一键全面测试所有 API / 六引擎");
+        diagnostics.setOnClickListener(v->startActivity(new Intent(this,ApiDiagnosticsActivity.class)));
+        LinearLayout.LayoutParams diagnosticsLayout=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48));
+        diagnosticsLayout.topMargin=dp(8);
+        apiSettingsSection.addView(diagnostics,diagnosticsLayout);
         LinearLayout.LayoutParams geminiLayout = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         geminiLayout.topMargin = dp(8);
         apiSettingsSection.addView(buildGeminiCard(), geminiLayout);

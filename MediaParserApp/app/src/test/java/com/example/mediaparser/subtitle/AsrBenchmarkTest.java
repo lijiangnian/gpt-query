@@ -15,4 +15,8 @@ public class AsrBenchmarkTest {
     @Test public void refusesToInventCerWithoutReference(){AsrBenchmark.Score s=AsrBenchmark.score("测试",output(),1200,"");assertEquals(-1,s.cer,0);assertEquals(-1,s.timestampErrorMs,0);}
 
     @Test public void computesCerAndTimestampAgainstSrt(){String ref="1\n00:00:01,000 --> 00:00:03,000\n今天开会\n";AsrBenchmark.Score s=AsrBenchmark.score("测试",output(),1200,ref);assertEquals(0,s.cer,0);assertEquals(0,s.deletionRate,0);assertEquals(0,s.timestampErrorMs,0);}
+
+    @Test public void weightedScoreNeedsReference(){AsrBenchmark.Score s=AsrBenchmark.score("测试",output(),1200,"");assertEquals(-1,AsrBenchmark.weighted(s,Collections.singletonList(s)),0);}
+
+    @Test public void perfectReferenceProducesHighWeightedScore(){String ref="1\n00:00:01,000 --> 00:00:03,000\n今天开会\n";AsrBenchmark.Score s=AsrBenchmark.score("测试",output(),1200,ref);assertTrue(AsrBenchmark.weighted(s,Collections.singletonList(s))>95);}
 }
