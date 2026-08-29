@@ -28,6 +28,10 @@ final class DoubaoStreamingTranscriber {
     private static final String URL="wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream";
     private static final String RESOURCE="volc.bigasr.sauc.duration";
     private static final int CHUNK_BYTES=LocalAudioDecoder.SAMPLE_RATE*2/5; // 200 ms, PCM16 mono
+    // The non-streaming endpoint accepts buffered audio. Four-times pacing keeps the
+    // websocket queue bounded while avoiding a mandatory one-minute wait per minute
+    // of source audio. Live tests still verify that final timestamps cover the file.
+    private static final int SEND_SPEED=4;
 
     private DoubaoStreamingTranscriber(){}
 
@@ -69,8 +73,9 @@ final class DoubaoStreamingTranscriber {
                     byte[] chunk=n==buf.length?buf:java.util.Arrays.copyOf(buf,n);sent+=n;boolean last=sent>=total;
                     while(ws.queueSize()>1024*1024){Thread.sleep(20);throwIfFailed(failure);}
                     if(!ws.send(ByteString.of(packet(last?0x22:0x20,0x00,chunk))))throw new IOException("豆包直传音频发送失败");
-                    int percent=(int)Math.min(100,sent*100/Math.max(1,total));if(listener!=null)listener.stage("豆包流式识别 "+percent+"% · 音频按实时速度发送");
-                    if(!last){long targetNs=(sent/2)*1_000_000_000L/LocalAudioDecoder.SAMPLE_RATE;long waitNs=targetNs-(System.nanoTime()-started);if(waitNs>0)TimeUnit.NANOSECONDS.sleep(waitNs);}
+                    int percent=(int)Math.min(100,sent*100/Math.max(1,total));
+                    if(listener!=null){long remainingAudioMs=Math.max(0,(total-sent)*1000L/(LocalAudioDecoder.SAMPLE_RATE*2L));long etaMs=remainingAudioMs/SEND_SPEED;listener.stage("豆包快速直传 "+percent+"% · 约剩 "+eta(etaMs));}
+                    if(!last){long targetNs=(sent/2)*1_000_000_000L/(LocalAudioDecoder.SAMPLE_RATE*SEND_SPEED);long waitNs=targetNs-(System.nanoTime()-started);if(waitNs>0)TimeUnit.NANOSECONDS.sleep(waitNs);}
                 }
             }
             if(!finished.await(180,TimeUnit.SECONDS))throw new IOException("豆包直传已发送完成，但等待最终结果超时");throwIfFailed(failure);
@@ -95,6 +100,7 @@ final class DoubaoStreamingTranscriber {
     private static String decode(byte[] data,int offset,int size,int compression)throws Exception{byte[] raw=java.util.Arrays.copyOfRange(data,offset,offset+size);if(compression==1){try(GZIPInputStream in=new GZIPInputStream(new ByteArrayInputStream(raw));ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[] b=new byte[8192];int n;while((n=in.read(b))>=0)out.write(b,0,n);raw=out.toByteArray();}}return new String(raw,StandardCharsets.UTF_8);}
     private static int readInt(byte[] data,int p){return ByteBuffer.wrap(data,p,4).order(ByteOrder.BIG_ENDIAN).getInt();}
     private static void throwIfFailed(AtomicReference<Throwable> failure)throws Exception{Throwable t=failure.get();if(t==null)return;if(t instanceof Exception)throw (Exception)t;throw new IOException(t);}
+    private static String eta(long ms){long seconds=Math.max(0,(ms+999)/1000);return seconds>=60?(seconds/60)+"分"+(seconds%60)+"秒":seconds+"秒";}
     private static String safe(String s){return s==null?"":s.replaceAll("[\\r\\n]+"," ").trim();}
     static final class Packet{final JSONObject json;final boolean terminal;Packet(JSONObject j,boolean t){json=j;terminal=t;}}
 }

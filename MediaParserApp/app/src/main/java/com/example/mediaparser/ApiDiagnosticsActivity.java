@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
@@ -34,6 +35,7 @@ import com.example.mediaparser.subtitle.GeminiKeyValidator;
 import com.example.mediaparser.subtitle.GroqKeyStore;
 import com.example.mediaparser.subtitle.GroqKeyValidator;
 import com.example.mediaparser.subtitle.LocalModelManager;
+import com.example.mediaparser.subtitle.ReferenceTextFile;
 import com.example.mediaparser.subtitle.SubtitleExtractor;
 import com.example.mediaparser.subtitle.SubtitleOutput;
 import com.example.mediaparser.subtitle.SubtitleProvider;
@@ -51,6 +53,7 @@ import java.util.concurrent.Executors;
 
 /** One-tap, on-device diagnostics. Raw credentials never leave the provider-specific request. */
 public final class ApiDiagnosticsActivity extends Activity {
+    private static final int REFERENCE_FILE=5203;
     private static final int BLUE=Color.rgb(39,100,231),TEXT=Color.rgb(23,27,35),MUTED=Color.rgb(103,112,126),BORDER=Color.rgb(224,228,236),PANEL=Color.rgb(247,249,252);
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private TextView state,media,pageLabel;private CheckBox actual;private EditText reference;private Button run,copy,save,previous,next;private volatile boolean busy;private String report="";private List<String> reportPages=new ArrayList<>();private int pageIndex;
@@ -66,12 +69,14 @@ public final class ApiDiagnosticsActivity extends Activity {
         Button open=secondary("导入/更换测试文件");open.setOnClickListener(v->startActivity(new Intent(this,LocalMediaActivity.class)));root.addView(open,new LinearLayout.LayoutParams(-1,dp(46)));
         actual=new CheckBox(this);actual.setText("同时用最近导入文件依次真实转写六个引擎（可能耗费额度）");actual.setChecked(false);actual.setPadding(0,dp(8),0,dp(8));root.addView(actual);
         reference=new EditText(this);reference.setHint("标准答案（可选）：粘贴人工文稿、硬字幕 OCR 或 SRT。有标准答案才计算准确率排名。");reference.setMinLines(3);reference.setMaxLines(7);reference.setTextSize(13);reference.setTextColor(TEXT);reference.setPadding(dp(12),dp(10),dp(12),dp(10));reference.setBackground(bg(Color.WHITE,12,BORDER));LinearLayout.LayoutParams refp=new LinearLayout.LayoutParams(-1,-2);refp.bottomMargin=dp(8);root.addView(reference,refp);
+        Button importReference=secondary("导入 TXT / SRT 标准稿");importReference.setOnClickListener(v->startActivityForResult(ReferenceTextFile.picker(),REFERENCE_FILE));LinearLayout.LayoutParams irp=new LinearLayout.LayoutParams(-1,dp(46));irp.bottomMargin=dp(8);root.addView(importReference,irp);
         run=primary("开始全面测试");run.setOnClickListener(v->start());root.addView(run,new LinearLayout.LayoutParams(-1,dp(52)));
         state=text("尚未测试",13,MUTED,false);state.setTextIsSelectable(true);state.setPadding(0,dp(12),0,dp(12));root.addView(state);
         LinearLayout pager=new LinearLayout(this);previous=secondary("上一页");next=secondary("下一页");pageLabel=text("0 / 0",13,MUTED,true);pageLabel.setGravity(android.view.Gravity.CENTER);pager.addView(previous,new LinearLayout.LayoutParams(0,dp(44),1));pager.addView(pageLabel,new LinearLayout.LayoutParams(0,dp(44),1));pager.addView(next,new LinearLayout.LayoutParams(0,dp(44),1));root.addView(pager);previous.setEnabled(false);next.setEnabled(false);previous.setOnClickListener(v->{if(pageIndex>0){pageIndex--;showPage();}});next.setOnClickListener(v->{if(pageIndex+1<reportPages.size()){pageIndex++;showPage();}});
         LinearLayout row=new LinearLayout(this);copy=secondary("复制脱敏报告");save=secondary("保存到 Download");copy.setEnabled(false);save.setEnabled(false);row.addView(copy,new LinearLayout.LayoutParams(0,dp(46),1));LinearLayout.LayoutParams sl=new LinearLayout.LayoutParams(0,dp(46),1);sl.setMarginStart(dp(8));row.addView(save,sl);root.addView(row);copy.setOnClickListener(v->copy());save.setOnClickListener(v->save());return scroll;}
 
     @Override protected void onResume(){super.onResume();refreshMedia();}
+    @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request!=REFERENCE_FILE||result!=RESULT_OK||data==null)return;Uri uri=data.getData();if(uri==null)return;try{reference.setText(ReferenceTextFile.read(this,uri));toast("标准稿已导入，只在本机用于准确率计算");}catch(Exception e){toast("标准稿导入失败："+e.getMessage());}}
     private void refreshMedia(){android.content.SharedPreferences p=getSharedPreferences("diagnostic_last_media",MODE_PRIVATE);String title=p.getString("title","");media.setText(title.isBlank()?"真实转写样本：尚未保存最近导入文件（仍可运行全部鉴权）":"真实转写样本："+title+" · "+p.getString("mime",""));}
     private void start(){if(busy)return;boolean withActual=actual.isChecked();String ref=reference.getText().toString().trim();MediaItem sample=lastMedia();if(withActual&&sample==null){toast("请先导入一个本地视频或音频，App 会记住它作为测试样本");return;}busy=true;run.setEnabled(false);copy.setEnabled(false);save.setEnabled(false);previous.setEnabled(false);next.setEnabled(false);pageLabel.setText("测试中");state.setText("正在读取本机加密配置并开始鉴权…");worker.execute(()->{StringBuilder out=new StringBuilder(header(withActual,ref));List<String> secrets=secrets();testAuth(out,secrets);if(withActual)testActual(out,sample,secrets,ref);report=redact(out.toString(),secrets);reportPages=DiagnosticReportSanitizer.pages(report,12);pageIndex=0;runOnUiThread(()->{busy=false;run.setEnabled(true);copy.setEnabled(true);save.setEnabled(true);showPage();});});}
 

@@ -261,7 +261,7 @@ public final class XhsParser implements PlatformParser {
         try { return Long.parseLong(String.valueOf(v)); } catch (Exception ignored) { return 0L; }
     }
 
-    private static String originalImageUrl(JSONObject img) {
+    static String originalImageUrl(JSONObject img) {
         if (img == null) return "";
         String u = img.optString("urlDefault", "");
         if (u.isBlank()) u = img.optString("urlPre", "");
@@ -277,8 +277,8 @@ public final class XhsParser implements PlatformParser {
         }
         u = https(JsonUtil.normalizeUrl(u));
         if (u.isBlank()) return "";
-        int bang = u.indexOf('!');
-        if (bang > 0) u = u.substring(0, bang);
+        // Xiaohongshu CDN transformation suffixes can carry the request signature.
+        // Stripping the "!nd_..." suffix turns otherwise valid image URLs into 403s.
         return u;
     }
 

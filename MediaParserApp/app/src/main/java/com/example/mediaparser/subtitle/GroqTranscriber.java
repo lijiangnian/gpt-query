@@ -140,22 +140,22 @@ public final class GroqTranscriber {
                 if(!item.optString("word", "").isBlank())
                     raw.add(new SubtitleExtractor.Word(item.getString("word"),timeMs(item,"start"),timeMs(item,"end"),""));
             }
-            SubtitleTimeline.words(raw,duration);
-            SubtitleExtractor.Parsed parsed=parse(root);
-            SubtitleTimeline.words(parsed.words,duration);
-            SubtitleTimeline.segments(parsed.segments,duration);
-            return new SubtitleExtractor.Parsed(parsed.fullText,parsed.language,parsed.segments,parsed.words,duration,
-                    parsed.words.isEmpty()?"使用服务端句级时间轴；无字级定位":"");
+            raw=SubtitleTimeline.providerWords(raw,duration);
+            if(raw.isEmpty())throw new IOException("Groq 未返回字级时间轴");
+            String full=root.optString("text","").trim();
+            raw=joinWrittenTokens(raw,full);
+            List<SubtitleSegment> grouped=SubtitleTimeline.providerSegments(SubtitleExtractor.groupWords(raw),duration);
+            return new SubtitleExtractor.Parsed(full,root.optString("language",""),grouped,raw,duration,"已校验服务商字级时间轴");
         } catch (IllegalStateException | IOException wordError) {
             try {
                 JSONObject segmentOnly=new JSONObject().put("text",root.optString("text", ""))
                         .put("language",root.optString("language", ""))
                         .put("segments",root.optJSONArray("segments"));
                 SubtitleExtractor.Parsed parsed=parse(segmentOnly);
-                SubtitleTimeline.segments(parsed.segments,duration);
-                return new SubtitleExtractor.Parsed(parsed.fullText,parsed.language,parsed.segments,
+                List<SubtitleSegment> fixed=SubtitleTimeline.providerSegments(parsed.segments,duration);
+                return new SubtitleExtractor.Parsed(parsed.fullText,parsed.language,fixed,
                         java.util.Collections.emptyList(),duration,
-                        "字级时间轴不可用，已使用服务端句级时间轴；未估算时间（"+wordError.getMessage()+"）");
+                        "词级时间轴已自动降级；当前 SRT 使用并校验过的服务端句级时间轴（"+wordError.getMessage()+"）");
             } catch (IllegalStateException | IOException segmentError) {
                 throw new IOException("字级："+wordError.getMessage()+"；句级："+segmentError.getMessage());
             }

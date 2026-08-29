@@ -110,18 +110,21 @@ public final class SubtitleExtractor {
     }
 
     private static SubtitleOutput extractDoubao(Context context,MediaItem source,String title,TranscriptionOptions options,Listener listener)throws Exception{
-        DoubaoCredentialStore.Credentials creds=DoubaoCredentialStore.load(context);phase(listener,SubtitleProgress.Phase.PREPARE,SubtitleProgress.State.COMPLETE,source.isLocal()?"本地文件使用豆包流式直传 · 不需要公网 URL":"使用解析后的公网直链 · 豆包服务端读取音视频");phase(listener,SubtitleProgress.Phase.DOUBAO,SubtitleProgress.State.RUNNING,"提交豆包录音文件识别…");
+        DoubaoCredentialStore.Credentials creds=DoubaoCredentialStore.load(context);boolean turbo=DoubaoTranscriber.isTurbo(creds.resourceId);phase(listener,SubtitleProgress.Phase.PREPARE,SubtitleProgress.State.COMPLETE,source.isLocal()?(turbo?"本地文件使用豆包极速版单请求直传":"本地文件使用豆包4倍速流式直传 · 不需要公网 URL"):(turbo?"豆包极速版读取解析直链":"豆包标准版读取解析直链"));phase(listener,SubtitleProgress.Phase.DOUBAO,SubtitleProgress.State.RUNNING,"提交豆包录音文件识别…");
         try{DoubaoTranscriber.Result r;
             if(source.isLocal()){
                 File audio=FileSaver.prepareAudioForCloud(context,source,(done,total)->{if(listener!=null&&total>0)listener.onSourceProgress((int)Math.min(100,done*100/total),done,total);});
-                try{r=DoubaoStreamingTranscriber.transcribe(audio,context.getCacheDir(),creds,options.language,s->phase(listener,SubtitleProgress.Phase.DOUBAO,SubtitleProgress.State.RUNNING,s));}finally{audio.delete();}
+                try{if(turbo)try{r=DoubaoTranscriber.transcribeFlash(audio,creds,options.language,s->phase(listener,SubtitleProgress.Phase.DOUBAO,SubtitleProgress.State.RUNNING,s));}
+                    catch(Exception flash){phase(listener,SubtitleProgress.Phase.DOUBAO,SubtitleProgress.State.WARNING,"极速版直传失败，自动切换4倍速流式："+errorMessage(flash,creds.apiKey+creds.accessToken));r=DoubaoStreamingTranscriber.transcribe(audio,context.getCacheDir(),creds,options.language,s->phase(listener,SubtitleProgress.Phase.DOUBAO,SubtitleProgress.State.RUNNING,s));}
+                    else r=DoubaoStreamingTranscriber.transcribe(audio,context.getCacheDir(),creds,options.language,s->phase(listener,SubtitleProgress.Phase.DOUBAO,SubtitleProgress.State.RUNNING,s));
+                }finally{audio.delete();}
             }else try{r=DoubaoTranscriber.transcribe(source.url,creds,options.language,s->phase(listener,SubtitleProgress.Phase.DOUBAO,SubtitleProgress.State.RUNNING,s));}
             catch(Exception first){if(!isDoubaoAudioUrlFailure(first))throw first;
                 phase(listener,SubtitleProgress.Phase.DOUBAO,SubtitleProgress.State.WARNING,"标准版无法下载防盗链音频，自动切换流式小时版直传");
                 File audio=FileSaver.prepareAudioForCloud(context,source,(done,total)->{if(listener!=null&&total>0)listener.onSourceProgress((int)Math.min(100,done*100/total),done,total);});
                 try{r=DoubaoStreamingTranscriber.transcribe(audio,context.getCacheDir(),creds,options.language,s->phase(listener,SubtitleProgress.Phase.DOUBAO,SubtitleProgress.State.RUNNING,s));}finally{audio.delete();}
             }
-            Parsed p=new Parsed(r.text,r.language,r.segments,r.words,r.durationMs,"豆包句级时间轴"+(r.words.isEmpty()?" · 接口未返回词级时间戳":" · 已保存词级时间戳"));SubtitleOutput out=saveRaw(context,title,"_豆包ASR原稿",p,"豆包 ASR（标准版/流式直传回退）");phase(listener,SubtitleProgress.Phase.DOUBAO,SubtitleProgress.State.COMPLETE,SubtitleProgress.rawDetail(out));return out;
+            Parsed p=new Parsed(r.text,r.language,r.segments,r.words,r.durationMs,"豆包句级时间轴"+(r.words.isEmpty()?" · 接口未返回词级时间戳":" · 已保存词级时间戳"));SubtitleOutput out=saveRaw(context,title,"_豆包ASR原稿",p,"豆包 ASR（极速版/标准版/4倍速流式）");phase(listener,SubtitleProgress.Phase.DOUBAO,SubtitleProgress.State.COMPLETE,SubtitleProgress.rawDetail(out));return out;
         }catch(Exception e){phase(listener,SubtitleProgress.Phase.DOUBAO,SubtitleProgress.State.FAILED,errorMessage(e,creds.apiKey+creds.accessToken));throw e;}
     }
     static boolean isDoubaoAudioUrlFailure(Throwable e){String m=e==null||e.getMessage()==null?"":e.getMessage().toLowerCase(Locale.ROOT);return m.contains("45000006")||m.contains("invalid audio uri")||m.contains("audio download failed");}
@@ -197,7 +200,7 @@ public final class SubtitleExtractor {
         String jsonUri=SubtitleSaver.saveText(context,title,suffix+"_alignment",".json","application/json",alignmentJson(parsed,engine).toString(2));
         return SubtitleOutput.timed(new SubtitleOutput(parsed.segments,parsed.fullText,srt,parsed.language,srtUri,txtUri,parsed.words,jsonUri,engine),parsed.durationMs,parsed.timingWarning);
     }
-    static JSONObject alignmentJson(Parsed p,String engine)throws Exception{JSONObject root=new JSONObject().put("schema","mediaparser-asr-alignment-v1").put("actual_engine",engine).put("language",p.language).put("duration_ms",p.durationMs).put("timing_warning",p.timingWarning);JSONArray segs=new JSONArray();for(int i=0;i<p.segments.size();i++){SubtitleSegment s=p.segments.get(i);segs.put(new JSONObject().put("segment_id",i+1).put("start_ms",s.startCs*10).put("end_ms",s.endCs*10).put("text",s.text));}JSONArray words=new JSONArray();for(Word w:p.words){JSONObject x=new JSONObject().put("start_ms",w.startMs).put("end_ms",w.endMs).put("text",w.text).put("speaker",w.speaker);if(w.confidence>=0)x.put("confidence",w.confidence);words.put(x);}return root.put("segments",segs).put("words",words);}
+    static JSONObject alignmentJson(Parsed p,String engine)throws Exception{JSONObject root=new JSONObject().put("schema","mediaparser-asr-alignment-v2").put("actual_engine",engine).put("language",p.language).put("duration_ms",p.durationMs).put("full_text",p.fullText).put("timing_warning",p.timingWarning);JSONArray segs=new JSONArray();for(int i=0;i<p.segments.size();i++){SubtitleSegment s=p.segments.get(i);segs.put(new JSONObject().put("segment_id",i+1).put("start_ms",s.startCs*10).put("end_ms",s.endCs*10).put("text",s.text));}JSONArray words=new JSONArray();for(Word w:p.words){JSONObject x=new JSONObject().put("start_ms",w.startMs).put("end_ms",w.endMs).put("text",w.text).put("speaker",w.speaker);if(w.confidence>=0)x.put("confidence",w.confidence);words.put(x);}return root.put("segments",segs).put("words",words);}
     private static void phase(Listener listener,SubtitleProgress.Phase phase,SubtitleProgress.State state,String detail) {
         if(listener!=null)listener.onPhase(phase,state,detail);
     }
@@ -379,9 +382,9 @@ public final class SubtitleExtractor {
         if (words.isEmpty() && !full.isBlank()) {
             throw new IllegalStateException("Gemini 未返回字级时间戳；未生成估算时间轴，请重试或手动切换 Groq");
         }
-        SubtitleTimeline.words(words,durationMs);
+        words = SubtitleTimeline.providerWords(words,durationMs);
         List<SubtitleSegment> segments = groupWords(words);
-        SubtitleTimeline.segments(segments,durationMs);
+        segments = SubtitleTimeline.providerSegments(segments,durationMs);
         return new Parsed(full, language, segments, words,durationMs,"");
     }
 

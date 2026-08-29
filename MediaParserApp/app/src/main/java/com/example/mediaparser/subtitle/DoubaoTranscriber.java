@@ -11,6 +11,7 @@ import java.util.*;
 /** Volcengine/Doubao BigModel recorded-file ASR asynchronous API client. */
 public final class DoubaoTranscriber {
     private static final String HOST="https://openspeech.bytedance.com";
+    private static final long FLASH_SAFE_BYTES=20_000_000L;
     public interface Listener{void stage(String text);}
     public static final class Result{public final String text,language;public final List<SubtitleSegment> segments;public final List<SubtitleExtractor.Word> words;public final long durationMs;
         Result(String t,String l,List<SubtitleSegment>s,List<SubtitleExtractor.Word>w,long d){text=t;language=l;segments=s;words=w;durationMs=d;}}
@@ -18,11 +19,33 @@ public final class DoubaoTranscriber {
     private DoubaoTranscriber(){}
 
     public static Result transcribe(String mediaUrl,DoubaoCredentialStore.Credentials c,String language,Listener listener)throws Exception{
-        require(mediaUrl,c);String id=UUID.randomUUID().toString();JSONObject request=new JSONObject().put("model_name","bigmodel").put("enable_itn",true).put("show_utterances",true).put("show_words",true);
+        require(mediaUrl,c);if(isTurbo(c.resourceId))return transcribeFlash(new JSONObject().put("url",mediaUrl),c,language,listener);
+        String id=UUID.randomUUID().toString();JSONObject request=new JSONObject().put("model_name","bigmodel").put("enable_itn",true).put("show_utterances",true).put("show_words",true);
         if("zh".equals(language))request.put("language","zh-CN");JSONObject body=new JSONObject().put("user",new JSONObject().put("uid",c.appId.isBlank()?"mediaparser":c.appId)).put("audio",new JSONObject().put("url",mediaUrl)).put("request",request);
         if(listener!=null)listener.stage("提交豆包录音文件识别任务…");Response submit=call("/api/v3/auc/bigmodel/submit",c,id,body);
         if(!accepted(submit))throw apiError("豆包任务提交失败",submit);long deadline=System.currentTimeMillis()+25L*60*60*1000;
         while(true){if(Thread.currentThread().isInterrupted())throw new InterruptedException("豆包任务已取消");if(System.currentTimeMillis()>deadline)throw new IOException("豆包任务等待超过25小时");Thread.sleep(2500);Response q=call("/api/v3/auc/bigmodel/query",c,id,null);if("20000000".equals(q.status)){if(listener!=null)listener.stage("读取豆包分句与词级时间戳…");return parse(q.body);}if(!processing(q))throw apiError("豆包任务失败",q);if(listener!=null)listener.stage("豆包服务端处理 · "+(q.message.isBlank()?q.status:q.message));}
+    }
+
+    /** Flash resource supports a local file as base64 in one request; keep a conservative 20MB cap. */
+    public static Result transcribeFlash(File audio,DoubaoCredentialStore.Credentials c,String language,Listener listener)throws Exception{
+        if(c==null||!c.configured())throw new IllegalArgumentException("请先设置豆包语音识别凭证");
+        if(!isTurbo(c.resourceId))throw new IllegalArgumentException("本地极速上传需要开通并填写 volc.bigasr.auc_turbo");
+        if(audio==null||!audio.isFile()||audio.length()<=0)throw new IOException("豆包极速版：本地音频为空");
+        if(audio.length()>FLASH_SAFE_BYTES)throw new IOException("豆包极速版本地直传按稳定上限限制为20MB，请改用4倍速流式直传");
+        if(listener!=null)listener.stage("豆包极速版：编码并上传本地音频…");
+        byte[] bytes=readBytes(audio,FLASH_SAFE_BYTES);
+        String data=java.util.Base64.getEncoder().encodeToString(bytes);
+        return transcribeFlash(new JSONObject().put("data",data),c,language,listener);
+    }
+
+    private static Result transcribeFlash(JSONObject audio,DoubaoCredentialStore.Credentials c,String language,Listener listener)throws Exception{
+        String id=UUID.randomUUID().toString();JSONObject request=new JSONObject().put("model_name","bigmodel").put("enable_itn",true).put("show_utterances",true).put("show_words",true);
+        if("zh".equals(language))request.put("language","zh-CN");
+        JSONObject body=new JSONObject().put("user",new JSONObject().put("uid",c.appId.isBlank()?"mediaparser":c.appId)).put("audio",audio).put("request",request);
+        if(listener!=null)listener.stage("豆包极速版：单请求识别中…");Response response=call("/api/v3/auc/bigmodel/recognize/flash",c,id,body);
+        if(!"20000000".equals(response.status))throw apiError("豆包极速版识别失败",response);
+        if(listener!=null)listener.stage("读取豆包极速版分句与时间戳…");return parse(response.body);
     }
     static Result parse(JSONObject root)throws Exception{
         JSONObject result=root.optJSONObject("result");if(result==null&&root.optJSONObject("data")!=null)result=root.getJSONObject("data").optJSONObject("result");if(result==null)throw new IOException("豆包结果缺少 result");
@@ -45,5 +68,6 @@ public final class DoubaoTranscriber {
     private static void require(String url,DoubaoCredentialStore.Credentials c){if(c==null||!c.configured())throw new IllegalArgumentException("请先设置豆包语音识别凭证");URI u=URI.create(url);if(!"https".equalsIgnoreCase(u.getScheme()))throw new IllegalArgumentException("豆包文件识别要求公网可访问的 HTTPS 音视频直链");}
     private static IOException apiError(String prefix,Response r){String detail=!r.message.isBlank()?r.message:r.body.optString("message","");return new IOException(prefix+" · HTTP "+r.http+(r.status.isBlank()?"":" · "+r.status)+(detail.isBlank()?"":" · "+detail)+(r.logId.isBlank()?"":" · LogID "+r.logId));}
     private static String read(InputStream in)throws Exception{if(in==null)return"";try(InputStream x=in;ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[]b=new byte[8192];int n;while((n=x.read(b))>=0){out.write(b,0,n);if(out.size()>32*1024*1024)throw new IOException("豆包响应过大");}return out.toString(StandardCharsets.UTF_8.name());}}
+    private static byte[] readBytes(File file,long max)throws Exception{try(InputStream in=new BufferedInputStream(new FileInputStream(file));ByteArrayOutputStream out=new ByteArrayOutputStream((int)Math.min(file.length(),max))){byte[]b=new byte[64*1024];int n;while((n=in.read(b))>=0){out.write(b,0,n);if(out.size()>max)throw new IOException("豆包极速版本地音频超过20MB");}return out.toByteArray();}}
     private static String nvl(String x){return x==null?"":x.trim();}
 }

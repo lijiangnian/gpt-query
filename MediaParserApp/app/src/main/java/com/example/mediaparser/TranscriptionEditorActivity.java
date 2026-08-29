@@ -46,17 +46,19 @@ import java.util.concurrent.Executors;
 public final class TranscriptionEditorActivity extends Activity {
     private static final int BLUE=Color.rgb(39,100,231),TEXT=Color.rgb(23,27,35),MUTED=Color.rgb(103,112,126),BORDER=Color.rgb(224,228,236),PANEL=Color.rgb(247,249,252);
     private final ArrayList<Row> rows=new ArrayList<>();private final Handler main=new Handler(Looper.getMainLooper());private final ExecutorService worker=Executors.newSingleThreadExecutor();
-    private LinearLayout list;private TextView summary;private int visible=40;private String engine="",language="",title="media",sourceUri="",sourceMime="";private long durationMs;private boolean meeting,video;private MediaPlayer player;private Runnable stopPlayback;
+    private LinearLayout list;private TextView summary;private int visible=40;private String engine="",language="",title="media",sourceUri="",sourceMime="",documentPath="";private long durationMs;private boolean meeting,video;private MediaPlayer player;private Runnable stopPlayback;
 
     public static Intent intent(Context context,AsrDocument document,String title,String sourceUri,String sourceMime,boolean video,boolean meeting)throws Exception{
-        File folder=new File(context.getCacheDir(),"editor");if(!folder.exists()&&!folder.mkdirs())throw new IllegalStateException("无法创建编辑缓存");File f=new File(folder,UUID.randomUUID()+".json");write(f,document.toJson().toString());
+        File folder=new File(context.getNoBackupFilesDir(),"editor");if(!folder.exists()&&!folder.mkdirs())throw new IllegalStateException("无法创建编辑缓存");cleanupOld(folder);File f=new File(folder,UUID.randomUUID()+".json");write(f,document.toJson().toString());
         return new Intent(context,TranscriptionEditorActivity.class).putExtra("document",f.getAbsolutePath()).putExtra("title",title).putExtra("source_uri",sourceUri).putExtra("source_mime",sourceMime).putExtra("video",video).putExtra("meeting",meeting);
     }
 
     @Override protected void onCreate(Bundle b){super.onCreate(b);try{load();setContentView(ui());}catch(Exception e){new AlertDialog.Builder(this).setTitle("无法打开转写稿").setMessage(e.getMessage()).setPositiveButton("关闭",(d,w)->finish()).show();}}
-    @Override protected void onDestroy(){releasePlayer();worker.shutdownNow();super.onDestroy();}
+    @Override protected void onDestroy(){releasePlayer();worker.shutdownNow();if(isFinishing()&&!documentPath.isBlank())new File(documentPath).delete();super.onDestroy();}
 
-    private void load()throws Exception{Intent i=getIntent();title=i.getStringExtra("title");sourceUri=i.getStringExtra("source_uri");sourceMime=i.getStringExtra("source_mime");meeting=i.getBooleanExtra("meeting",false);video=i.getBooleanExtra("video",false);String path=i.getStringExtra("document");if(path==null)throw new IllegalArgumentException("缺少转写结果");File f=new File(path);AsrDocument d=AsrDocument.fromJson(new JSONObject(read(f)));f.delete();engine=d.engine;language=d.language;durationMs=d.durationMs;for(AsrDocument.Segment s:d.segments)rows.add(new Row(s.startMs,s.endMs,s.text,s.speaker,s.confidence));}
+    private void load()throws Exception{Intent i=getIntent();title=i.getStringExtra("title");sourceUri=i.getStringExtra("source_uri");sourceMime=i.getStringExtra("source_mime");meeting=i.getBooleanExtra("meeting",false);video=i.getBooleanExtra("video",false);documentPath=i.getStringExtra("document");if(documentPath==null)throw new IllegalArgumentException("缺少转写结果");File f=new File(documentPath);AsrDocument d=AsrDocument.fromJson(new JSONObject(read(f)));engine=d.engine;language=d.language;durationMs=d.durationMs;for(AsrDocument.Segment s:d.segments)rows.add(new Row(s.startMs,s.endMs,s.text,s.speaker,s.confidence));}
+
+    private static void cleanupOld(File folder){File[] files=folder.listFiles();if(files==null)return;long cutoff=System.currentTimeMillis()-24L*60*60*1000;for(File f:files)if(f.isFile()&&f.lastModified()<cutoff)f.delete();}
 
     private static void write(File file,String value)throws Exception{try(FileOutputStream out=new FileOutputStream(file)){out.write(value.getBytes(StandardCharsets.UTF_8));}}
     private static String read(File file)throws Exception{try(FileInputStream in=new FileInputStream(file);ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[]b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);return new String(out.toByteArray(),StandardCharsets.UTF_8);}}

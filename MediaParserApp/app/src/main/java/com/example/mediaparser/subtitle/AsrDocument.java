@@ -13,14 +13,19 @@ import java.util.Map;
 public final class AsrDocument {
     public final String engine;
     public final String language;
+    public final String transcript;
     public final long durationMs;
     public final List<Segment> segments;
     public final List<Word> words;
 
     public AsrDocument(String engine,String language,long durationMs,List<Segment> segments,List<Word> words){
+        this(engine,language,durationMs,segments,words,"");
+    }
+    public AsrDocument(String engine,String language,long durationMs,List<Segment> segments,List<Word> words,String transcript){
         this.engine=n(engine);this.language=n(language);this.durationMs=Math.max(0,durationMs);
         this.segments=Collections.unmodifiableList(new ArrayList<>(segments));
         this.words=Collections.unmodifiableList(new ArrayList<>(words));
+        this.transcript=n(transcript);
     }
 
     public static AsrDocument from(SubtitleOutput output){
@@ -34,15 +39,15 @@ public final class AsrDocument {
             for(Word w:words)if(w.endMs>=start&&w.startMs<=end)inside.add(w);
             segments.add(new Segment(i+1,start,end,s.text,speaker(inside),confidence(inside),inside));
         }
-        return new AsrDocument(output.actualEngine,output.detectedLanguage,output.durationMs,segments,words);
+        return new AsrDocument(output.actualEngine,output.detectedLanguage,output.durationMs,segments,words,output.fullText);
     }
 
-    public String plainText(){StringBuilder b=new StringBuilder();for(Segment s:segments){if(b.length()>0)b.append('\n');b.append(s.text);}return b.toString();}
+    public String plainText(){if(!transcript.isBlank())return transcript;StringBuilder b=new StringBuilder();for(Segment s:segments){if(b.length()>0)b.append('\n');b.append(s.text);}return b.toString();}
     public String timestampText(){StringBuilder b=new StringBuilder();for(Segment s:segments){if(b.length()>0)b.append('\n');b.append(clock(s.startMs)).append("  ");if(!s.speaker.isBlank())b.append(s.speaker).append("：");b.append(s.text);}return b.toString();}
     public String srt(){StringBuilder b=new StringBuilder();for(int i=0;i<segments.size();i++){Segment s=segments.get(i);b.append(i+1).append('\n').append(srtTime(s.startMs)).append(" --> ").append(srtTime(s.endMs)).append('\n').append(s.text).append("\n\n");}return b.toString();}
 
     public JSONObject toJson()throws Exception{
-        JSONObject root=new JSONObject().put("schema","mediaparser-asr-v2").put("engine",engine).put("language",language).put("duration_ms",durationMs);
+        JSONObject root=new JSONObject().put("schema","mediaparser-asr-v3").put("engine",engine).put("language",language).put("duration_ms",durationMs).put("full_text",plainText());
         JSONArray ss=new JSONArray();for(Segment s:segments)ss.put(s.toJson().put("engine",engine).put("language",language));JSONArray ww=new JSONArray();for(Word w:words)ww.put(w.toJson());
         return root.put("segments",ss).put("words",ww);
     }
@@ -50,7 +55,7 @@ public final class AsrDocument {
     public static AsrDocument fromJson(JSONObject root)throws Exception{
         ArrayList<Word> words=new ArrayList<>();JSONArray ww=root.optJSONArray("words");if(ww!=null)for(int i=0;i<ww.length();i++)words.add(Word.fromJson(ww.getJSONObject(i)));
         ArrayList<Segment> segments=new ArrayList<>();JSONArray ss=root.optJSONArray("segments");if(ss!=null)for(int i=0;i<ss.length();i++)segments.add(Segment.fromJson(ss.getJSONObject(i)));
-        return new AsrDocument(root.optString("engine"),root.optString("language"),root.optLong("duration_ms"),segments,words);
+        return new AsrDocument(first(root,"engine","actual_engine"),root.optString("language"),root.optLong("duration_ms"),segments,words,root.optString("full_text"));
     }
 
     public static final class Segment{
@@ -70,6 +75,7 @@ public final class AsrDocument {
     private static String speaker(List<Word> words){Map<String,Integer> c=new LinkedHashMap<>();for(Word w:words)if(!w.speaker.isBlank())c.put(w.speaker,c.getOrDefault(w.speaker,0)+1);String best="";int n=0;for(Map.Entry<String,Integer>e:c.entrySet())if(e.getValue()>n){best=e.getKey();n=e.getValue();}return best;}
     private static double confidence(List<Word> words){double sum=0;int n=0;for(Word w:words)if(w.confidence>=0){sum+=w.confidence;n++;}return n==0?-1:sum/n;}
     private static String n(String s){return s==null?"":s.trim();}
+    private static String first(JSONObject root,String a,String b){String value=root.optString(a);return value.isBlank()?root.optString(b):value;}
     private static String clock(long ms){long h=ms/3600000;ms%=3600000;long m=ms/60000;ms%=60000;return String.format(java.util.Locale.ROOT,"%02d:%02d:%02d",h,m,ms/1000);}
     private static String srtTime(long ms){long h=ms/3600000;ms%=3600000;long m=ms/60000;ms%=60000;return String.format(java.util.Locale.ROOT,"%02d:%02d:%02d,%03d",h,m,ms/1000,ms%1000);}
 }
