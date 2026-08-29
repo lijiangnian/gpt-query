@@ -19,4 +19,8 @@ public class AsrBenchmarkTest {
     @Test public void weightedScoreNeedsReference(){AsrBenchmark.Score s=AsrBenchmark.score("测试",output(),1200,"");assertEquals(-1,AsrBenchmark.weighted(s,Collections.singletonList(s)),0);}
 
     @Test public void perfectReferenceProducesHighWeightedScore(){String ref="1\n00:00:01,000 --> 00:00:03,000\n今天开会\n";AsrBenchmark.Score s=AsrBenchmark.score("测试",output(),1200,ref);assertTrue(AsrBenchmark.weighted(s,Collections.singletonList(s))>95);}
+
+    @Test public void plainReferenceRenormalizesMissingTimestampWeight(){AsrBenchmark.Score s=AsrBenchmark.score("测试",output(),1200,"今天开会");assertEquals(-1,s.timestampErrorMs,0);assertTrue(AsrBenchmark.weighted(s,Collections.singletonList(s))>95);}
+
+    @Test public void reportContainsAccuracyAndCompositeRankings(){AsrBenchmark.Score s=AsrBenchmark.score("测试",output(),1200,"今天开会");String report=AsrBenchmark.report(Collections.singletonList(s),true);assertTrue(report.contains("文字准确率：100.0%"));assertTrue(report.contains("文字准确率排名"));assertTrue(report.contains("综合排名"));}
 }
