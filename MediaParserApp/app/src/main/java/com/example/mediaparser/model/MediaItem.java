@@ -45,6 +45,17 @@ public final class MediaItem {
                 SaveMode.EXTRACT_AUDIO_TRACK, ".m4a", "audio/mp4");
     }
 
+    /** A user-selected Storage Access Framework document. The URI permission is held by the app. */
+    public static MediaItem local(Type type, String label, String contentUri,
+                                  String preferredExtension, String mimeType) {
+        return new MediaItem(type, label, contentUri, Collections.emptyMap(),
+                SaveMode.DIRECT, preferredExtension, mimeType);
+    }
+
+    public boolean isLocal() {
+        return url.startsWith("content://") || url.startsWith("file://");
+    }
+
     public boolean extractsAudioTrack() {
         return saveMode == SaveMode.EXTRACT_AUDIO_TRACK;
     }

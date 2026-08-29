@@ -173,6 +173,8 @@ public final class MainActivity extends Activity {
         chipsScroll.addView(chips);
         root.addView(chipsScroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        root.addView(buildLocalMediaEntryCard());
+
         root.addView(buildRouteCard());
 
         input = new EditText(this);
@@ -263,6 +265,18 @@ public final class MainActivity extends Activity {
         root.addView(apiSettingsSection);
         return scroll;
     }
+
+    private View buildLocalMediaEntryCard(){
+        LinearLayout card=panel();
+        LinearLayout.LayoutParams outer=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);outer.topMargin=dp(14);card.setLayoutParams(outer);
+        card.addView(text("本地音视频 / 会议",17,TEXT,true));
+        TextView note=text("不需要先上传社媒：相册视频、录屏、会议录音可直接转字幕、逐字稿或做六引擎横评。",12,MUTED,false);note.setPadding(0,dp(5),0,dp(9));card.addView(note);
+        LinearLayout first=new LinearLayout(this);first.setOrientation(LinearLayout.HORIZONTAL);Button video=secondaryButton("选择本地视频"),audio=secondaryButton("选择本地音频");first.addView(video,new LinearLayout.LayoutParams(0,dp(44),1f));LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(0,dp(44),1f);ap.setMarginStart(dp(8));first.addView(audio,ap);card.addView(first);
+        Button meeting=primaryButton("会议 / 录音 → 逐字稿与纪要");LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(46));mp.topMargin=dp(8);card.addView(meeting,mp);
+        video.setOnClickListener(v->openLocalMedia("video"));audio.setOnClickListener(v->openLocalMedia("audio"));meeting.setOnClickListener(v->openLocalMedia("meeting"));return card;
+    }
+
+    private void openLocalMedia(String pick){startActivity(new Intent(this,LocalMediaActivity.class).putExtra("pick",pick));}
 
     private void handleIntent(Intent intent) {
         if (intent == null) return;

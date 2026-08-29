@@ -132,7 +132,7 @@ public final class BilibiliParser implements PlatformParser {
         return "";
     }
 
-    private static String enc(String s) { return URLEncoder.encode(s, StandardCharsets.UTF_8); }
+    private static String enc(String s) { try{return URLEncoder.encode(s, StandardCharsets.UTF_8.name());}catch(Exception e){throw new IllegalStateException(e);} }
     private static String friendly(Exception e) { return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage(); }
 
     private static final class AudioChoice {

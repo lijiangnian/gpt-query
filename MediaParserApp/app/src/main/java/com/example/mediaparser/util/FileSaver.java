@@ -43,7 +43,7 @@ public final class FileSaver {
         File temp = File.createTempFile("mediaparser_subtitle_src_", ext, context.getCacheDir());
         boolean ok = false;
         try {
-            try (FileOutputStream out = new FileOutputStream(temp)) { streamDownload(item, out, null); }
+            try (FileOutputStream out = new FileOutputStream(temp)) { streamSource(context,item, out, null); }
             ok = true;
             return temp;
         } finally {
@@ -64,7 +64,7 @@ public final class FileSaver {
             File audio = File.createTempFile("mediaparser_cloud_audio_", ".m4a", context.getCacheDir());
             boolean ok = false;
             try {
-                try (FileOutputStream out = new FileOutputStream(audio)) { streamDownload(item, out, listener); }
+                try (FileOutputStream out = new FileOutputStream(audio)) { streamSource(context,item, out, listener); }
                 ok = true;
                 return audio;
             } finally {
@@ -79,7 +79,7 @@ public final class FileSaver {
         File audio = File.createTempFile("mediaparser_cloud_audio_", ".m4a", context.getCacheDir());
         boolean ok = false;
         try {
-            try (FileOutputStream out = new FileOutputStream(source)) { streamDownload(item, out, listener); }
+            try (FileOutputStream out = new FileOutputStream(source)) { streamSource(context,item, out, listener); }
             remuxAudio(source, audio);
             if(videoReady!=null)videoReady.accept(source);
             ok = true;
@@ -107,7 +107,7 @@ public final class FileSaver {
             try {
                 try (OutputStream out = resolver.openOutputStream(uri)) {
                     if (out == null) throw new IllegalStateException("系统无法写入媒体文件");
-                    streamDownload(item, out, null);
+                    streamSource(context,item, out, null);
                 }
                 finishPending(resolver, uri);
                 return uri.toString();
@@ -120,7 +120,7 @@ public final class FileSaver {
         File folder = legacyFolder(item);
         if (!folder.exists() && !folder.mkdirs()) throw new IllegalStateException("无法创建保存目录");
         File outFile = new File(folder, fileName);
-        try (FileOutputStream out = new FileOutputStream(outFile)) { streamDownload(item, out, null); }
+        try (FileOutputStream out = new FileOutputStream(outFile)) { streamSource(context,item, out, null); }
         return outFile.getAbsolutePath();
     }
 
@@ -130,7 +130,7 @@ public final class FileSaver {
         String fileName = safe + "_音频_" + System.currentTimeMillis() + ".m4a";
         File temp = File.createTempFile("mediaparser_audio_src_", ".mp4", context.getCacheDir());
         try {
-            try (FileOutputStream out = new FileOutputStream(temp)) { streamDownload(item, out, null); }
+            try (FileOutputStream out = new FileOutputStream(temp)) { streamSource(context,item, out, null); }
             if (Build.VERSION.SDK_INT >= 29) {
                 ContentResolver resolver = context.getContentResolver();
                 ContentValues values = new ContentValues();
@@ -223,11 +223,27 @@ public final class FileSaver {
             info.offset = 0;
             info.size = size;
             info.presentationTimeUs = Math.max(0, extractor.getSampleTime());
-            info.flags = extractor.getSampleFlags();
+            info.flags = (extractor.getSampleFlags() & MediaExtractor.SAMPLE_FLAG_SYNC) != 0
+                    ? MediaCodec.BUFFER_FLAG_KEY_FRAME : 0;
             muxer.writeSampleData(muxTrack, buffer, info);
             if (!extractor.advance()) break;
         }
         muxer.stop();
+    }
+
+    private static void streamSource(Context context,MediaItem item,OutputStream out,ProgressListener listener)throws Exception{
+        if(item.isLocal()){
+            Uri uri=Uri.parse(item.url);long total=-1;
+            try(android.database.Cursor cursor=context.getContentResolver().query(uri,new String[]{android.provider.OpenableColumns.SIZE},null,null,null)){
+                if(cursor!=null&&cursor.moveToFirst()&&!cursor.isNull(0))total=cursor.getLong(0);
+            }catch(Exception ignored){}
+            try(InputStream in="file".equalsIgnoreCase(uri.getScheme())?new java.io.FileInputStream(new File(uri.getPath())):context.getContentResolver().openInputStream(uri)){
+                if(in==null)throw new IllegalStateException("系统无法读取所选本地文件");byte[] buf=new byte[64*1024];long done=0;int n;
+                while((n=in.read(buf))!=-1){if(Thread.currentThread().isInterrupted())throw new InterruptedException("本地文件读取已取消");out.write(buf,0,n);done+=n;if(listener!=null)listener.onProgress(done,total);}
+                out.flush();return;
+            }
+        }
+        streamDownload(item,out,listener);
     }
 
     private static void streamDownload(MediaItem item, OutputStream out, ProgressListener listener) throws Exception {

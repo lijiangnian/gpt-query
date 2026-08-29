@@ -123,7 +123,7 @@ public final class HttpClient {
             if (total > maxBytes) throw new IllegalStateException("页面过大，超过 " + maxBytes + " 字节");
             out.write(buf, 0, n);
         }
-        return out.toString(StandardCharsets.UTF_8);
+        return new String(out.toByteArray(),StandardCharsets.UTF_8);
     }
 
     private static byte[] readBytes(InputStream in, int maxBytes) throws Exception {

@@ -12,6 +12,8 @@
         <activity
             android:name=".XhsWebViewActivity"
             android:exported="false" />
+        <activity android:name=".LocalMediaActivity" android:exported="false" />
+        <activity android:name=".TranscriptionEditorActivity" android:exported="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

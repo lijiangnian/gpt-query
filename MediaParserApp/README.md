@@ -1,6 +1,19 @@
-# MediaParser Android v0.3.8
+# MediaParser Android v0.4.0
 
-支持抖音、小红书、快手、B站、微博分享链接解析、媒体保存、音轨提取和多引擎字幕。
+支持抖音、小红书、快手、B站、微博分享链接解析，并新增本地视频/音频、会议逐字稿、六引擎横评和时间轴编辑器。
+
+## 本地音视频工作台
+
+- 从系统文件选择器导入 MP4 / MOV / MKV / MP3 / M4A / WAV / AAC。
+- 字幕模式：ASR → SRT/TXT/统一 JSON → 可编辑时间轴 → 硬字幕截图 ZIP。
+- 会议模式：逐字稿、发言人字段、带时间戳全文，并复制提示词到网页版模型生成会议纪要。
+- 横评模式：同一文件逐个运行本地、Paraformer-v2、Qwen3-ASR、豆包、Gemini、Groq，分别显示进度、实际引擎和耗时。
+- 有人工稿、硬字幕 OCR 或 SRT 参考时计算 CER、漏字率和时间戳误差；没有参考稿时明确显示不可计算，不用模型一致度冒充准确率。
+- 阿里云本地文件使用百炼官方临时存储，文件与模型/账号绑定并在 48 小时后自动清理。只有用户勾选本任务云端许可后才上传。
+
+统一 ASR JSON 为 `mediaparser-asr-v2`，每段保存 `segment_id/start_ms/end_ms/text/words/speaker/engine/language/confidence`。
+
+编辑器支持修改文字、播放当前句、合并、拆分、删除，并重新导出 SRT、TXT、带时间戳全文和统一 JSON。App 仍不调用 Gemini 二次校正；“整理字幕/会议纪要”只复制网页提示词或导出整理包。
 
 ## ASR 引擎
 

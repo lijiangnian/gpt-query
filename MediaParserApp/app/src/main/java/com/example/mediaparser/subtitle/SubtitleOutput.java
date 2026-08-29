@@ -24,5 +24,13 @@ public final class SubtitleOutput {
     }
     static SubtitleOutput timed(SubtitleOutput x,long duration,String warning){return new SubtitleOutput(x.segments,x.fullText,x.srt,x.detectedLanguage,x.srtLocation,x.txtLocation,x.timedWords,x.alignmentLocation,x.actualEngine,duration,warning);}
     public boolean hasTiming(){return !segments.isEmpty()&&!srt.isBlank();}
+    public AsrDocument document(){return AsrDocument.from(this);}
+    public static SubtitleOutput fromDocument(AsrDocument document){
+        ArrayList<SubtitleSegment> segments=new ArrayList<>();
+        for(AsrDocument.Segment s:document.segments)segments.add(new SubtitleSegment(s.startMs/10,Math.max(s.startMs/10+1,s.endMs/10),s.text));
+        ArrayList<SubtitleExtractor.Word> words=new ArrayList<>();
+        for(AsrDocument.Word w:document.words)words.add(new SubtitleExtractor.Word(w.text,w.startMs,w.endMs,w.speaker,w.confidence));
+        return new SubtitleOutput(segments,document.plainText(),document.srt(),document.language,"","",words,"",document.engine,document.durationMs,"");
+    }
     private static String n(String s){return s==null?"":s;}
 }

@@ -139,7 +139,7 @@ public final class DouyinParser implements PlatformParser {
         }
         raw = scriptById(html, "RENDER_DATA");
         if (raw != null) {
-            try { return new JSONObject(URLDecoder.decode(raw.trim(), StandardCharsets.UTF_8)); } catch (Exception ignored) {}
+            try { return new JSONObject(URLDecoder.decode(raw.trim(), StandardCharsets.UTF_8.name())); } catch (Exception ignored) {}
         }
         raw = between(html, "window._SSR_DATA", "</script>");
         if (raw == null) raw = between(html, "window._SSR_HYDRATED_DATA", "</script>");

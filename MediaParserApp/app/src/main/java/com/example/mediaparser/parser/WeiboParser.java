@@ -59,8 +59,8 @@ public final class WeiboParser implements PlatformParser {
         h.put("X-Requested-With", "XMLHttpRequest");
         if (!cookie.isBlank()) h.put("Cookie", cookie);
         String payload = "{\"Component_Play_Playinfo\":{\"oid\":\"" + id.replace("\"", "") + "\"}}";
-        String body = "data=" + URLEncoder.encode(payload, StandardCharsets.UTF_8);
-        HttpClient.Response r = HttpClient.post("https://weibo.com/tv/api/component?page=/tv/show/" + URLEncoder.encode(id, StandardCharsets.UTF_8), h, body);
+        String body = "data=" + enc(payload);
+        HttpClient.Response r = HttpClient.post("https://weibo.com/tv/api/component?page=/tv/show/" + enc(id), h, body);
         if (r.body.isBlank() || !r.body.trim().startsWith("{")) return null;
         JSONObject root = new JSONObject(r.body);
         JSONObject data = JsonUtil.object(root, "data", "Component_Play_Playinfo");
@@ -96,7 +96,7 @@ public final class WeiboParser implements PlatformParser {
         h.put("MWeibo-Pwa", "1");
         h.put("Accept", "application/json, text/plain, */*");
         if (!cookie.isBlank()) h.put("Cookie", cookie);
-        HttpClient.Response r = HttpClient.get("https://m.weibo.cn/statuses/show?id=" + URLEncoder.encode(id, StandardCharsets.UTF_8), h);
+        HttpClient.Response r = HttpClient.get("https://m.weibo.cn/statuses/show?id=" + enc(id), h);
         if (r.body.isBlank() || !r.body.trim().startsWith("{")) return null;
         JSONObject root = new JSONObject(r.body);
         JSONObject mblog = root.optJSONObject("data");
@@ -154,12 +154,12 @@ public final class WeiboParser implements PlatformParser {
             h1.put("User-Agent", HttpClient.IPHONE_UA);
             h1.put("Content-Type", "application/x-www-form-urlencoded");
             h1.put("Referer", "https://m.weibo.cn/");
-            String fp = "cb=gen_callback&fp=" + URLEncoder.encode("{\"os\":\"1\",\"browser\":\"Safari16\",\"fonts\":\"undefined\",\"screen\":\"*\",\"plugins\":\"\"}", StandardCharsets.UTF_8);
+            String fp = "cb=gen_callback&fp=" + enc("{\"os\":\"1\",\"browser\":\"Safari16\",\"fonts\":\"undefined\",\"screen\":\"*\",\"plugins\":\"\"}");
             String t1 = HttpClient.post("https://visitor.passport.weibo.cn/visitor/genvisitor", h1, fp).body;
             Matcher mt = Pattern.compile("\\\"tid\\\":\\\"([^\\\"]+)\\\"").matcher(t1);
             if (!mt.find()) return "";
             String tid = mt.group(1);
-            String url = "https://visitor.passport.weibo.cn/visitor/visitor?a=incarnate&t=" + URLEncoder.encode(tid, StandardCharsets.UTF_8) + "&w=2&c=100&gc=&cb=cross_domain&from=weibo&_rand=" + Math.random();
+            String url = "https://visitor.passport.weibo.cn/visitor/visitor?a=incarnate&t=" + enc(tid) + "&w=2&c=100&gc=&cb=cross_domain&from=weibo&_rand=" + Math.random();
             String t2 = HttpClient.get(url, Map.of("User-Agent", HttpClient.IPHONE_UA, "Referer", "https://m.weibo.cn/")).body;
             Matcher ms = Pattern.compile("\\\"sub\\\":\\\"([^\\\"]+)\\\"").matcher(t2);
             Matcher mp = Pattern.compile("\\\"subp\\\":\\\"([^\\\"]+)\\\"").matcher(t2);
@@ -196,6 +196,7 @@ public final class WeiboParser implements PlatformParser {
     private static String firstNonBlank(String... v) { for (String s : v) if (s != null && !s.isBlank()) return s; return ""; }
     private static String originalImage(String u) { return u.replace("/thumb150/", "/large/").replace("/bmiddle/", "/large/").replace("/orj360/", "/large/"); }
     private static String stripHtml(String s) { return s == null ? "" : s.replaceAll("<[^>]+>", "").replace("&nbsp;", " ").replace("&amp;", "&").trim(); }
-    private static String decode(String s) { try { return java.net.URLDecoder.decode(s, StandardCharsets.UTF_8); } catch (Exception e) { return s; } }
+    private static String enc(String s){try{return URLEncoder.encode(s,StandardCharsets.UTF_8.name());}catch(Exception e){return s;}}
+    private static String decode(String s) { try { return java.net.URLDecoder.decode(s, StandardCharsets.UTF_8.name()); } catch (Exception e) { return s; } }
     private static String friendly(Exception e) { return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage(); }
 }

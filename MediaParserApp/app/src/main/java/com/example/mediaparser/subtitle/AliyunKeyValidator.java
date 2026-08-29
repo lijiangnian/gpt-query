@@ -46,7 +46,7 @@ public final class AliyunKeyValidator {
 
         HttpURLConnection connection = null;
         try {
-            String model = URLEncoder.encode(targetModel, StandardCharsets.UTF_8);
+            String model = URLEncoder.encode(targetModel, StandardCharsets.UTF_8.name());
             String url = "https://" + ws + ".cn-beijing.maas.aliyuncs.com/api/v1/quotas"
                     + "?model=" + model + "&page_no=1&page_size=20";
             connection = (HttpURLConnection) URI.create(url).toURL().openConnection();

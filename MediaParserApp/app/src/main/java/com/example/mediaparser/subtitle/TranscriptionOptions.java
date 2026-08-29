@@ -15,11 +15,16 @@ public final class TranscriptionOptions {
     public final boolean visualReview;
     public final String language;
     public final boolean accurate;
+    public final boolean diarization;
     public final List<String> vocabulary;
 
-    public TranscriptionOptions(String language, boolean accurate, String terms) { this(language,accurate,terms,false); }
+    public TranscriptionOptions(String language, boolean accurate, String terms) { this(language,accurate,terms,false,false); }
     public TranscriptionOptions(String language, boolean accurate, String terms, boolean visualReview) {
+        this(language,accurate,terms,visualReview,false);
+    }
+    public TranscriptionOptions(String language, boolean accurate, String terms, boolean visualReview,boolean diarization) {
         this.visualReview=visualReview;
+        this.diarization=diarization;
         if (!"auto".equals(language) && !"zh".equals(language)) throw new IllegalArgumentException("识别语言设置无效");
         this.language = language;
         this.accurate = accurate;
