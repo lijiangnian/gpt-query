@@ -22,4 +22,12 @@ public class ApiDiagnosticsActivityTest {
         String out=DiagnosticReportSanitizer.redact("Authorization: abcdefghijklmnop", java.util.Collections.emptyList());
         assertFalse(out.contains("abcdefghijklmnop"));
     }
+
+    @Test public void longReportsArePaginatedWithoutDroppingLines(){
+        StringBuilder b=new StringBuilder();for(int i=0;i<30;i++){if(i>0)b.append('\n');b.append("line-").append(i);}
+        java.util.List<String> pages=DiagnosticReportSanitizer.pages(b.toString(),12);
+        assertTrue(pages.size()>=3);
+        String joined=String.join("\n",pages);
+        assertTrue(joined.contains("line-0"));assertTrue(joined.contains("line-29"));
+    }
 }

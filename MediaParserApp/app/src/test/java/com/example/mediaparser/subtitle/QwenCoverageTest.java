@@ -46,4 +46,10 @@ public final class QwenCoverageTest {
 
         assertTrue(SubtitleExtractor.isLowCoverage(output));
     }
+
+    @Test public void httpUpgradePreservesSignedOssEncoding() throws Exception {
+        String signed="http://example.aliyuncs.com/result.json?Signature=a%2Fb%2Bc%3D&x-oss-signature=AA%2FBB%2BCC";
+        String upgraded=Qwen3AsrTranscriber.safeResultUri(signed).toString();
+        assertEquals("https://example.aliyuncs.com/result.json?Signature=a%2Fb%2Bc%3D&x-oss-signature=AA%2FBB%2BCC",upgraded);
+    }
 }

@@ -150,9 +150,10 @@ public final class MainActivity extends Activity {
             return insets;
         });
 
-        TextView title = text("媒体解析器", 28, TEXT, true);
+        root.addView(buildPageNavigation());
+        TextView title = text("直连解析", 28, TEXT, true);
         root.addView(title);
-        TextView sub = text("粘贴完整分享文案，或从社媒 App 直接“分享”到这里。", 15, MUTED, false);
+        TextView sub = text("社媒链接解析、视频保存与字幕生成。粘贴完整分享文案，或从社媒 App 直接“分享”到这里。", 15, MUTED, false);
         sub.setPadding(0, dp(6), 0, dp(12));
         root.addView(sub);
 
@@ -172,8 +173,6 @@ public final class MainActivity extends Activity {
         }
         chipsScroll.addView(chips);
         root.addView(chipsScroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        root.addView(buildLocalMediaEntryCard());
 
         root.addView(buildRouteCard());
 
@@ -249,24 +248,11 @@ public final class MainActivity extends Activity {
         LinearLayout apiSettingsSection = new LinearLayout(this);
         apiSettingsSection.setOrientation(LinearLayout.VERTICAL);
         apiSettingsSection.setPadding(0, dp(22), 0, 0);
-        apiSettingsSection.addView(text("API Key 设置 · 本机加密保存", 15, TEXT, true));
-        Button diagnostics=primaryButton("一键全面测试所有 API / 六引擎");
-        diagnostics.setOnClickListener(v->startActivity(new Intent(this,ApiDiagnosticsActivity.class)));
-        LinearLayout.LayoutParams diagnosticsLayout=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48));
-        diagnosticsLayout.topMargin=dp(8);
-        apiSettingsSection.addView(diagnostics,diagnosticsLayout);
-        LinearLayout.LayoutParams geminiLayout = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        geminiLayout.topMargin = dp(8);
-        apiSettingsSection.addView(buildGeminiCard(), geminiLayout);
-        LinearLayout.LayoutParams groqLayout = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        groqLayout.topMargin = dp(8);
-        apiSettingsSection.addView(buildGroqCard(), groqLayout);
-        LinearLayout.LayoutParams aliLayout = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        aliLayout.topMargin = dp(8);
-        apiSettingsSection.addView(buildAliyunCard(), aliLayout);
-        LinearLayout.LayoutParams doubaoLayout = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        doubaoLayout.topMargin = dp(8);
-        apiSettingsSection.addView(buildDoubaoCard(), doubaoLayout);
+        apiSettingsSection.addView(text("API 与测试", 15, TEXT, true));
+        Button apiPage=primaryButton("打开 API 设置与分页测试");
+        apiPage.setOnClickListener(v->startActivity(new Intent(this,ApiSettingsActivity.class)));
+        LinearLayout.LayoutParams apiPageLayout=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(50));apiPageLayout.topMargin=dp(8);apiSettingsSection.addView(apiPage,apiPageLayout);
+        TextView apiNote=text("Gemini、Groq、阿里、豆包的密钥输入与鉴权均已移到独立子页面；首页不再显示完整设置表单。",12,MUTED,false);apiNote.setPadding(0,dp(6),0,0);apiSettingsSection.addView(apiNote);
         root.addView(apiSettingsSection);
         return scroll;
     }
@@ -280,6 +266,8 @@ public final class MainActivity extends Activity {
         Button meeting=primaryButton("会议 / 录音 → 逐字稿与纪要");LinearLayout.LayoutParams mp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(46));mp.topMargin=dp(8);card.addView(meeting,mp);
         video.setOnClickListener(v->openLocalMedia("video"));audio.setOnClickListener(v->openLocalMedia("audio"));meeting.setOnClickListener(v->openLocalMedia("meeting"));return card;
     }
+
+    private View buildPageNavigation(){LinearLayout nav=new LinearLayout(this);nav.setOrientation(LinearLayout.HORIZONTAL);Button direct=primaryButton("直连解析"),local=secondaryButton("本地处理"),settings=secondaryButton("API 设置");nav.addView(direct,new LinearLayout.LayoutParams(0,dp(44),1f));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(44),1f);lp.setMarginStart(dp(6));nav.addView(local,lp);LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(0,dp(44),1f);sp.setMarginStart(dp(6));nav.addView(settings,sp);local.setOnClickListener(v->startActivity(new Intent(this,LocalMediaActivity.class)));settings.setOnClickListener(v->startActivity(new Intent(this,ApiSettingsActivity.class)));LinearLayout.LayoutParams outer=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);outer.bottomMargin=dp(16);nav.setLayoutParams(outer);return nav;}
 
     private void openLocalMedia(String pick){startActivity(new Intent(this,LocalMediaActivity.class).putExtra("pick",pick));}
 

@@ -1,6 +1,6 @@
-# MediaParser Android v0.4.1
+# MediaParser Android v0.4.2
 
-新增手机端一键 API 鉴权、可选六引擎真实转写、脱敏测试报告与加权横评排名。详见 [README-v0.4.1.md](README-v0.4.1.md)。
+采用“直连解析 / 本地处理 / API 设置”三页架构，新增六引擎真实转写、脱敏分页报告与加权横评排名。详见 [README-v0.4.2.md](README-v0.4.2.md) 和 [ADB 真机测试报告](TEST-REPORT-v0.4.2.md)。
 
 支持抖音、小红书、快手、B站、微博分享链接解析，并新增本地视频/音频、会议逐字稿、六引擎横评和时间轴编辑器。
 
