@@ -1,0 +1,152 @@
+{
+  "duration": 8.637874176,
+  "task": "transcribe",
+  "x_groq": {"id": "req_01m1490pjge5xs23z7ysaxrsj3"},
+  "words": [
+    {
+      "start": 0.12,
+      "end": 0.3,
+      "word": "This"
+    },
+    {
+      "start": 0.3,
+      "end": 0.48,
+      "word": "is"
+    },
+    {
+      "start": 0.48,
+      "end": 0.7,
+      "word": "a"
+    },
+    {
+      "start": 0.7,
+      "end": 1.5,
+      "word": "subtitle"
+    },
+    {
+      "start": 1.5,
+      "end": 2.2,
+      "word": "test."
+    },
+    {
+      "start": 2.8,
+      "end": 2.98,
+      "word": "The"
+    },
+    {
+      "start": 2.98,
+      "end": 3.32,
+      "word": "meeting"
+    },
+    {
+      "start": 3.32,
+      "end": 3.84,
+      "word": "starts"
+    },
+    {
+      "start": 3.84,
+      "end": 4.12,
+      "word": "at"
+    },
+    {
+      "start": 4.12,
+      "end": 4.96,
+      "word": "9.30."
+    },
+    {
+      "start": 5.74,
+      "end": 6.04,
+      "word": "Please"
+    },
+    {
+      "start": 6.04,
+      "end": 6.4,
+      "word": "bring"
+    },
+    {
+      "start": 6.4,
+      "end": 6.7,
+      "word": "three"
+    },
+    {
+      "start": 6.7,
+      "end": 7.04,
+      "word": "blue"
+    },
+    {
+      "start": 7.04,
+      "end": 8.16,
+      "word": "notebooks."
+    }
+  ],
+  "language": "English",
+  "text": " This is a subtitle test. The meeting starts at 9.30. Please bring three blue notebooks.",
+  "segments": [
+    {
+      "start": 0,
+      "temperature": 0,
+      "avg_logprob": -0.3954083,
+      "no_speech_prob": 0,
+      "end": 2,
+      "tokens": [
+        50365,
+        639,
+        307,
+        257,
+        30706,
+        306,
+        1500,
+        13,
+        50465
+      ],
+      "id": 0,
+      "text": " This is a subtitle test.",
+      "seek": 0,
+      "compression_ratio": 1.0731708
+    },
+    {
+      "start": 2.8,
+      "temperature": 0,
+      "avg_logprob": -0.3954083,
+      "no_speech_prob": 0,
+      "end": 4.7999997,
+      "tokens": [
+        50505,
+        440,
+        3440,
+        3719,
+        412,
+        1722,
+        13,
+        3446,
+        13,
+        50605
+      ],
+      "id": 1,
+      "text": " The meeting starts at 9.30.",
+      "seek": 0,
+      "compression_ratio": 1.0731708
+    },
+    {
+      "start": 5.7,
+      "temperature": 0,
+      "avg_logprob": -0.3954083,
+      "no_speech_prob": 0,
+      "end": 7.8999996,
+      "tokens": [
+        50650,
+        2555,
+        1565,
+        1045,
+        3344,
+        43782,
+        13,
+        50760
+      ],
+      "id": 2,
+      "text": " Please bring three blue notebooks.",
+      "seek": 0,
+      "compression_ratio": 1.0731708
+    }
+  ]
+}
