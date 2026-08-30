@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <queries>
+        <package android:name="com.v2ray.ang" />
+        <package android:name="app.hiddify.com" />
+        <package android:name="com.follow.clash" />
+        <package android:name="com.github.metacubex.clash.meta" />
+        <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="vless" /></intent>
+        <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="clashmeta" /></intent>
+        <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="clash" /></intent>
+    </queries>
+
+    <application
+        android:allowBackup="true"
+        android:usesCleartextTraffic="true"
+        android:icon="@drawable/ic_launcher"
+        android:label="VLink"
+        android:theme="@android:style/Theme.Material.NoActionBar">
+        <activity
+            android:name=".VLinkActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
