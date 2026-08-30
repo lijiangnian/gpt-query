@@ -99,7 +99,7 @@ public final class DeveloperHelpActivity extends Activity {
                 "横评应使用同一份音频；有清晰硬字幕时可作为参考文本。文字准确率与时间戳质量需要分别判断。诊断报告可以复制或保存，但不会包含完整密钥。");
 
         LinearLayout signature=section(root,"关于",
-                "开发者：lijiangnian\n抖音昵称：ljn\n抖音号：70258976876\n版本：MediaParser v0.4.6\n\n感谢测试与反馈。功能、服务商条款和额度都可能变化，实际可用性以 App 当次测试结果及各服务商官方控制台为准。");
+                "开发者：lijiangnian\n抖音昵称：ljn\n抖音号：70258976876\n版本：MediaParser v0.4.7\n\n感谢测试与反馈。功能、服务商条款和额度都可能变化，实际可用性以 App 当次测试结果及各服务商官方控制台为准。");
         TextView sig=text("lijiangnian",18,BLUE,true);sig.setPadding(0,dp(10),0,dp(2));signature.addView(sig);
         link(signature,"打开我的抖音主页 · ljn","https://v.douyin.com/7qpitHslLT0/");
         return scroll;
