@@ -28,8 +28,9 @@ public final class DeveloperHelpActivity extends Activity {
         TextView title=text("开发者说明",27,TEXT,true);title.setPadding(0,dp(18),0,0);root.addView(title);
         TextView lead=text("MediaParser 是音视频解析、转写、字幕与会议整理工具。凭证由用户自行配置，云端和本地识别方式可以自由切换。",14,MUTED,false);lead.setPadding(0,dp(6),0,dp(4));root.addView(lead);
 
-        section(root,"三个主要入口",
-                "直连解析：粘贴受支持的社媒链接，解析媒体并保存视频或音轨。\n\n"+
+        section(root,"四个主要入口",
+                "直连解析：粘贴受支持的社媒链接。知乎无需固定复制格式，可粘贴完整分享文案、文章/回答/视频链接或直接接收系统“分享/处理文本”；纯文字也能收进 App。知乎视频可提取媒体，文章和回答可复制标题、作者、正文、封面与原链接。\n\n"+
+                "网盘直链：连接用户自己的 OpenList / AList，把已授权网盘文件转换为临时源站直链，再保存、提取音频或生成字幕。\n\n"+
                 "本地处理：导入手机里的视频、音频或会议录音，选择字幕、逐字稿、会议或多引擎横评模式。\n\n"+
                 "API 设置：配置云端识别服务、测试鉴权，并查看分页诊断报告。设置页面不会占用主页面空间。");
         section(root,"推荐使用流程",
@@ -62,6 +63,13 @@ public final class DeveloperHelpActivity extends Activity {
         link(doubao,"打开火山引擎语音控制台","https://console.volcengine.com/speech/service/17");
         link(doubao,"豆包语音官方价格","https://www.volcengine.com/product/asr");
 
+        LinearLayout openlist=section(root,"国内网盘直链 · OpenList",
+                "推荐使用开源 OpenList（AList 社区延续版）统一挂载 115、阿里云盘、夸克、百度、天翼、移动云盘、123 云盘等。MediaParser 连接你自己的 HTTPS OpenList，通过 /api/fs/get 获取 raw_url，并保留服务返回的 User-Agent / Referer，避免 115 等源站防盗链导致 403。\n\n"+
+                "临时源站直链是主路线：通常不用再次打开网盘网页，可直接下载、提音频和转字幕，但可能过期。/d/ 地址较稳定，私有站点仍可能要求 OpenList 登录、路径密码或签名。普通网盘分享页不能直接绕过登录、会员和提取码；应先在官方页面保存/授权，再从已挂载路径取直链。\n\n"+
+                "OpenList Token、用户名和密码使用 Android Keystore 加密。App 只允许 HTTPS 服务器，不接来路不明的公共解析站。");
+        link(openlist,"OpenList 开源项目","https://github.com/OpenListTeam/OpenList");
+        link(openlist,"OpenList 国内网盘驱动文档","https://doc.oplist.org/guide/drivers/115_open");
+
         section(root,"本地模型",
                 "本地模型无需 API Key，下载并校验一次后可以离线转写。小米 13 推荐优先使用 Fun-ASR-Nano INT8；干净短语音可尝试 SenseVoice Small，中文、英语、粤语和标点可对比 Paraformer。\n\n"+
                 "模型会占用数百 MB 到约 1 GB 存储。下载时可离开页面，但系统可能限制后台网络；回到“本地模型管理”查看实时进度、校验状态和已安装版本。长文件应分块处理并保留断点。");
@@ -91,7 +99,7 @@ public final class DeveloperHelpActivity extends Activity {
                 "横评应使用同一份音频；有清晰硬字幕时可作为参考文本。文字准确率与时间戳质量需要分别判断。诊断报告可以复制或保存，但不会包含完整密钥。");
 
         LinearLayout signature=section(root,"关于",
-                "开发者：lijiangnian\n抖音昵称：ljn\n抖音号：70258976876\n版本：MediaParser v0.4.5\n\n感谢测试与反馈。功能、服务商条款和额度都可能变化，实际可用性以 App 当次测试结果及各服务商官方控制台为准。");
+                "开发者：lijiangnian\n抖音昵称：ljn\n抖音号：70258976876\n版本：MediaParser v0.4.6\n\n感谢测试与反馈。功能、服务商条款和额度都可能变化，实际可用性以 App 当次测试结果及各服务商官方控制台为准。");
         TextView sig=text("lijiangnian",18,BLUE,true);sig.setPadding(0,dp(10),0,dp(2));signature.addView(sig);
         link(signature,"打开我的抖音主页 · ljn","https://v.douyin.com/7qpitHslLT0/");
         return scroll;

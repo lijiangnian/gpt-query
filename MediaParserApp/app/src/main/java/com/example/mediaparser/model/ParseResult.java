@@ -11,6 +11,8 @@ public final class ParseResult {
     public final String description;
     public final String coverUrl;
     public final String sourceUrl;
+    /** Clean article/answer text. It is intentionally separate from the short description. */
+    public final String contentText;
     public final List<MediaItem> media;
 
     private ParseResult(Builder b) {
@@ -20,6 +22,7 @@ public final class ParseResult {
         this.description = b.description;
         this.coverUrl = b.coverUrl;
         this.sourceUrl = b.sourceUrl;
+        this.contentText = b.contentText;
         this.media = Collections.unmodifiableList(new ArrayList<>(b.media));
     }
 
@@ -38,6 +41,7 @@ public final class ParseResult {
         private String author = "";
         private String description = "";
         private String coverUrl = "";
+        private String contentText = "";
         private final List<MediaItem> media = new ArrayList<>();
 
         private Builder(String platform, String sourceUrl) {
@@ -49,6 +53,7 @@ public final class ParseResult {
         public Builder author(String v) { author = n(v); return this; }
         public Builder description(String v) { description = n(v); return this; }
         public Builder coverUrl(String v) { coverUrl = n(v); return this; }
+        public Builder contentText(String v) { contentText = n(v); return this; }
         public Builder add(MediaItem item) { if (item != null && !item.url.isBlank()) media.add(item); return this; }
         public ParseResult build() { return new ParseResult(this); }
         private static String n(String s) { return s == null ? "" : s; }

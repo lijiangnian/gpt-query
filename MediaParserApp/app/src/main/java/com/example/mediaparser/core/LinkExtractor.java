@@ -43,6 +43,10 @@ public final class LinkExtractor {
         if (host.equals("v.kuaishou.com") || host.endsWith(".kuaishou.com")) return "kuaishou";
         if (host.equals("b23.tv") || host.endsWith(".bilibili.com")) return "bilibili";
         if (host.equals("weibo.com") || host.endsWith(".weibo.com") || host.equals("m.weibo.cn") || host.endsWith(".weibo.cn")) return "weibo";
+        if (host.equals("zhihu.com") || host.endsWith(".zhihu.com") || host.equals("zhihu.cn") || host.endsWith(".zhihu.cn")) return "zhihu";
+        String path;
+        try { path = URI.create(u).getPath(); } catch (Exception e) { path = ""; }
+        if (path != null && path.toLowerCase(Locale.ROOT).matches(".*\\.(mp4|m4v|mov|mkv|webm|mp3|m4a|aac|wav|flac|jpg|jpeg|png|webp)$")) return "direct";
         return null;
     }
 

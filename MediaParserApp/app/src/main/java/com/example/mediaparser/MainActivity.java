@@ -36,6 +36,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.example.mediaparser.core.LinkExtractor;
+import com.example.mediaparser.core.ShareTextAnalyzer;
 import com.example.mediaparser.model.MediaItem;
 import com.example.mediaparser.model.ParseResult;
 import com.example.mediaparser.parser.ParseException;
@@ -70,6 +71,7 @@ import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
     private static final int REQ_XHS_WEB = 4102;
+    private static final int REQ_ZHIHU_WEB = 4103;
     private static final int BLUE = Color.rgb(39, 100, 231);
     private static final int TEXT = Color.rgb(23, 27, 35);
     private static final int MUTED = Color.rgb(103, 112, 126);
@@ -161,7 +163,7 @@ public final class MainActivity extends Activity {
         chipsScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout chips = new LinearLayout(this);
         chips.setOrientation(LinearLayout.HORIZONTAL);
-        String[] names = {"抖音", "小红书", "快手", "B站", "微博"};
+        String[] names = {"抖音", "小红书", "快手", "B站", "微博", "知乎"};
         for (String n : names) {
             TextView chip = text(n, 13, TEXT, false);
             chip.setGravity(Gravity.CENTER);
@@ -180,7 +182,7 @@ public final class MainActivity extends Activity {
         input.setTextSize(16);
         input.setTextColor(TEXT);
         input.setHintTextColor(Color.rgb(145, 151, 162));
-        input.setHint("粘贴分享链接或整段分享文案\n例如：https://v.douyin.com/...");
+        input.setHint("粘贴分享链接或整段分享文案\n支持社媒视频、知乎文章/回答/视频");
         input.setGravity(Gravity.TOP | Gravity.START);
         input.setMinLines(5);
         input.setMaxLines(10);
@@ -267,13 +269,17 @@ public final class MainActivity extends Activity {
         video.setOnClickListener(v->openLocalMedia("video"));audio.setOnClickListener(v->openLocalMedia("audio"));meeting.setOnClickListener(v->openLocalMedia("meeting"));return card;
     }
 
-    private View buildPageNavigation(){LinearLayout nav=new LinearLayout(this);nav.setOrientation(LinearLayout.HORIZONTAL);Button direct=primaryButton("直连解析"),local=secondaryButton("本地处理"),settings=secondaryButton("API 设置");nav.addView(direct,new LinearLayout.LayoutParams(0,dp(44),1f));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(44),1f);lp.setMarginStart(dp(6));nav.addView(local,lp);LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(0,dp(44),1f);sp.setMarginStart(dp(6));nav.addView(settings,sp);local.setOnClickListener(v->startActivity(new Intent(this,LocalMediaActivity.class)));settings.setOnClickListener(v->startActivity(new Intent(this,ApiSettingsActivity.class)));LinearLayout.LayoutParams outer=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);outer.bottomMargin=dp(16);nav.setLayoutParams(outer);return nav;}
+    private View buildPageNavigation(){LinearLayout nav=new LinearLayout(this);nav.setOrientation(LinearLayout.HORIZONTAL);Button direct=primaryButton("直连解析"),cloud=secondaryButton("网盘直链"),local=secondaryButton("本地处理"),settings=secondaryButton("API 设置");Button[] all={direct,cloud,local,settings};for(int i=0;i<all.length;i++){all[i].setTextSize(12);all[i].setPadding(0,0,0,0);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(44),1f);if(i>0)p.setMarginStart(dp(4));nav.addView(all[i],p);}cloud.setOnClickListener(v->startActivity(new Intent(this,CloudDriveActivity.class)));local.setOnClickListener(v->startActivity(new Intent(this,LocalMediaActivity.class)));settings.setOnClickListener(v->startActivity(new Intent(this,ApiSettingsActivity.class)));LinearLayout.LayoutParams outer=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);outer.bottomMargin=dp(16);nav.setLayoutParams(outer);return nav;}
 
     private void openLocalMedia(String pick){startActivity(new Intent(this,LocalMediaActivity.class).putExtra("pick",pick));}
 
     private void handleIntent(Intent intent) {
         if (intent == null) return;
         String action = intent.getAction();
+        if (CloudDriveActivity.ACTION_OPEN_CLOUD_MEDIA.equals(action)) {
+            showCloudMedia(intent);
+            return;
+        }
         String shared = null;
         if (Intent.ACTION_SEND.equals(action) && intent.getType() != null && intent.getType().startsWith("text/")) {
             shared = intent.getStringExtra(Intent.EXTRA_TEXT);
@@ -282,11 +288,36 @@ public final class MainActivity extends Activity {
             if (cs != null) shared = cs.toString();
         }
         if (!TextUtils.isEmpty(shared)) {
+            if (LinkExtractor.extractFirstUrl(shared) == null) {
+                showResult(ParseResult.builder("复制文本", "").title("已接收文本").contentText(shared.trim()).build());
+                return;
+            }
             input.setText(shared);
             input.setSelection(input.length());
             status.setText("已收到分享内容，可直接解析。检测平台：" + displayPlatform(LinkExtractor.detectPlatform(shared)));
             startParse();
         }
+    }
+
+    private void showCloudMedia(Intent intent) {
+        String url = intent.getStringExtra("url");
+        String name = intent.getStringExtra("name");
+        if (url == null || !url.startsWith("https://")) {
+            showError("网盘返回的媒体地址无效或不是 HTTPS");
+            return;
+        }
+        if (name == null || name.isBlank()) name = "cloud_media.mp4";
+        String lower = name.toLowerCase();
+        MediaItem.Type type = lower.matches(".*\\.(jpg|jpeg|png|webp)$") ? MediaItem.Type.IMAGE
+                : lower.matches(".*\\.(mp3|m4a|aac|wav|flac)$") ? MediaItem.Type.AUDIO : MediaItem.Type.VIDEO;
+        Map<String, String> headers = new LinkedHashMap<>();
+        String ua = intent.getStringExtra("user_agent"), referer = intent.getStringExtra("referer");
+        if (ua != null && !ua.isBlank()) headers.put("User-Agent", ua);
+        if (referer != null && !referer.isBlank()) headers.put("Referer", referer);
+        ParseResult.Builder b = ParseResult.builder("网盘直链", url).title(name)
+                .add(new MediaItem(type, "OpenList 临时源站直链", url, headers));
+        if (type == MediaItem.Type.VIDEO) b.add(MediaItem.audioTrack("视频完整音轨 · M4A", url, headers));
+        showResult(b.build());
     }
 
     private void pasteClipboard() {
@@ -309,6 +340,11 @@ public final class MainActivity extends Activity {
             toast("先粘贴分享链接或分享文案");
             return;
         }
+        if (LinkExtractor.extractFirstUrl(text) == null && !text.startsWith("/")) {
+            showResult(ParseResult.builder("复制文本", "").title("已接收文本").contentText(text).build());
+            return;
+        }
+        if (routeCloudShare(text)) return;
         parsing = true;
         currentResult = null;
         resultBox.removeAllViews();
@@ -326,6 +362,8 @@ public final class MainActivity extends Activity {
                 String platform = LinkExtractor.detectPlatform(text);
                 if ("xhs".equals(platform)) {
                     main.post(() -> launchXhsFallback(text, e.getMessage()));
+                } else if ("zhihu".equals(platform)) {
+                    main.post(() -> launchZhihuFallback(text, e.getMessage()));
                 } else {
                     main.post(() -> showError(e.getMessage()));
                 }
@@ -351,9 +389,50 @@ public final class MainActivity extends Activity {
         startActivityForResult(i, REQ_XHS_WEB);
     }
 
+    private void launchZhihuFallback(String text, String fastError) {
+        String extracted = LinkExtractor.extractFirstUrl(text);
+        if (extracted == null) {
+            showError(fastError == null ? "知乎链接无效" : fastError);
+            return;
+        }
+        parsing = false;
+        progress.setVisibility(View.GONE);
+        parseButton.setEnabled(true);
+        parseButton.setText("重新解析");
+        status.setText("知乎公开页面受限，已切换本机浏览器兼容模式…");
+        Intent i = new Intent(this, ZhihuWebViewActivity.class);
+        i.putExtra(ZhihuWebViewActivity.EXTRA_URL, LinkExtractor.ensureScheme(extracted));
+        startActivityForResult(i, REQ_ZHIHU_WEB);
+    }
+
+    private boolean routeCloudShare(String text) {
+        ShareTextAnalyzer.Analysis a = ShareTextAnalyzer.analyze(text);
+        boolean openListPath = text.trim().startsWith("/");
+        boolean openListDownload = false;
+        try { openListDownload = !a.url.isBlank() && Uri.parse(a.url).getPath() != null && Uri.parse(a.url).getPath().startsWith("/d/"); } catch (Exception ignored) {}
+        if (!a.providerShare() && !openListPath && !openListDownload) return false;
+        Intent i = new Intent(this, CloudDriveActivity.class);
+        i.putExtra(Intent.EXTRA_TEXT, text);
+        startActivity(i);
+        status.setText("已识别网盘分享，转到“网盘直链”主页处理。");
+        return true;
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_ZHIHU_WEB) {
+            if (resultCode != RESULT_OK || data == null) {
+                showError("知乎浏览器解析未完成。可在页面完成验证/登录后点“重新提取”。");
+                return;
+            }
+            try {
+                showResult(parseZhihuWebResult(data.getStringExtra(ZhihuWebViewActivity.EXTRA_RESULT_JSON)));
+            } catch (Exception e) {
+                showError("知乎浏览器结果无效：" + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+            }
+            return;
+        }
         if (requestCode != REQ_XHS_WEB) return;
         if (resultCode != RESULT_OK || data == null) {
             showError("小红书浏览器兼容解析未完成。可重新解析后在页面中完成验证/登录再提取。");
@@ -422,6 +501,37 @@ public final class MainActivity extends Activity {
         return result;
     }
 
+    private ParseResult parseZhihuWebResult(String raw) throws Exception {
+        JSONObject obj = new JSONObject(raw == null ? "{}" : raw);
+        String sourceUrl=obj.optString("sourceUrl", ""),contentText=obj.optString("contentText", ""),description=obj.optString("description", "");
+        if(com.example.mediaparser.parser.ZhihuParser.isGenericSiteText(contentText))contentText="";
+        if(com.example.mediaparser.parser.ZhihuParser.isGenericSiteText(description))description="";
+        ParseResult.Builder b = ParseResult.builder("知乎", sourceUrl)
+                .title(com.example.mediaparser.parser.ZhihuParser.cleanTitle(obj.optString("title", "")))
+                .author(obj.optString("author", ""))
+                .description(description)
+                .contentText(contentText)
+                .coverUrl(obj.optString("coverUrl", ""));
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("Referer", "https://www.zhihu.com/");
+        headers.put("User-Agent", com.example.mediaparser.net.HttpClient.DESKTOP_UA);
+        JSONArray media = obj.optJSONArray("media");
+        boolean hasVideo=false;
+        if (media != null) for (int i = 0; i < media.length(); i++) {
+            JSONObject m = media.optJSONObject(i);
+            if (m == null) continue;
+            String url = m.optString("url", "");
+            if (url.isBlank()) continue;
+            MediaItem.Type type = "image".equals(m.optString("type", "video")) ? MediaItem.Type.IMAGE : MediaItem.Type.VIDEO;
+            if(type==MediaItem.Type.VIDEO)hasVideo=true;
+            b.add(new MediaItem(type, m.optString("label", "知乎媒体"), url, headers));
+        }
+        ParseResult out = b.build();
+        boolean bodyPage=sourceUrl.contains("/answer/")||sourceUrl.contains("zhuanlan.zhihu.com/p/")||sourceUrl.matches(".*zhihu\\.com/(?:p|pin)/.*");
+        if ((bodyPage&&out.contentText.isBlank()&&!hasVideo)||(!out.hasMedia()&&out.contentText.isBlank()&&out.title.isBlank())) throw new IllegalStateException("页面未读取到真实正文或视频，请完成知乎验证/登录后重试");
+        return out;
+    }
+
     private static boolean isLiveLabel(String label) {
         String l = label == null ? "" : label.toLowerCase();
         return l.contains("live") || l.contains("实况");
@@ -448,7 +558,9 @@ public final class MainActivity extends Activity {
         progress.setVisibility(View.GONE);
         parseButton.setEnabled(true);
         parseButton.setText("重新解析");
-        status.setText("解析成功 · " + r.platform + " · 找到 " + r.media.size() + " 个媒体文件");
+        status.setText("解析成功 · " + r.platform + (r.media.isEmpty()
+                ? (r.contentText.isBlank() ? "" : " · 已提取正文")
+                : " · 找到 " + r.media.size() + " 个媒体文件"));
         resultBox.removeAllViews();
         subtitleResultPanel = null;
         resultBox.setVisibility(View.VISIBLE);
@@ -476,6 +588,25 @@ public final class MainActivity extends Activity {
             TextView d = text(r.description, 14, MUTED, false);
             d.setPadding(0, dp(8), 0, 0);
             info.addView(d);
+        }
+        if (!r.contentText.isBlank()) {
+            TextView body = text(r.contentText, 14, TEXT, false);
+            body.setPadding(0, dp(10), 0, dp(8));
+            body.setMaxLines(12);
+            body.setEllipsize(TextUtils.TruncateAt.END);
+            body.setTextIsSelectable(true);
+            info.addView(body);
+            LinearLayout contentActions = new LinearLayout(this);
+            contentActions.setOrientation(LinearLayout.HORIZONTAL);
+            Button copyBody = secondaryButton("复制正文");
+            copyBody.setOnClickListener(v -> copyText(r.contentText, "已复制知乎正文"));
+            Button copyAll = secondaryButton("复制标题+正文");
+            copyAll.setOnClickListener(v -> copyText((r.title.isBlank() ? "" : r.title + "\n\n") + r.contentText + "\n\n" + r.sourceUrl, "已复制整理内容"));
+            contentActions.addView(copyBody, new LinearLayout.LayoutParams(0, dp(44), 1f));
+            LinearLayout.LayoutParams cap = new LinearLayout.LayoutParams(0, dp(44), 1f);
+            cap.setMarginStart(dp(8));
+            contentActions.addView(copyAll, cap);
+            info.addView(contentActions);
         }
         resultBox.addView(info);
 
@@ -1518,6 +1649,12 @@ public final class MainActivity extends Activity {
         toast("已复制直链");
     }
 
+    private void copyText(String s, String message) {
+        ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("text", s));
+        toast(message);
+    }
+
     private String displayPlatform(String key) {
         if (key == null) return "未识别";
         switch (key) {
@@ -1526,6 +1663,7 @@ public final class MainActivity extends Activity {
             case "kuaishou": return "快手";
             case "bilibili": return "B站";
             case "weibo": return "微博";
+            case "zhihu": return "知乎";
             default: return key;
         }
     }

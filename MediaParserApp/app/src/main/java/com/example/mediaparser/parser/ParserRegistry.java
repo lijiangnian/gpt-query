@@ -11,7 +11,9 @@ public final class ParserRegistry {
             new XhsParser(),
             new KuaishouParser(),
             new BilibiliParser(),
-            new WeiboParser()
+            new WeiboParser(),
+            new ZhihuParser(),
+            new DirectMediaParser()
     );
 
     public ParseResult parseText(String input) throws ParseException {
@@ -20,7 +22,7 @@ public final class ParserRegistry {
         if (extracted == null) throw new ParseException("没有检测到分享链接。可以直接粘贴 App 生成的整段分享文案。");
         String url = LinkExtractor.ensureScheme(extracted);
         String platform = LinkExtractor.detectPlatform(url);
-        if (platform == null) throw new ParseException("暂不支持这个链接。当前支持：抖音、小红书、快手、B站、微博。");
+        if (platform == null) throw new ParseException("暂不支持这个链接。当前支持：抖音、小红书、快手、B站、微博、知乎和 HTTPS 媒体直链。");
         for (PlatformParser p : parsers) {
             if (p.supports(url)) return p.parse(url);
         }
