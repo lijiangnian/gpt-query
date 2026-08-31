@@ -31,6 +31,9 @@ public final class DouyinParser implements PlatformParser {
             firstHeaders.put("Accept", "text/html,application/xhtml+xml");
             HttpClient.Response first = HttpClient.get(inputUrl, firstHeaders);
             String finalUrl = first.finalUrl;
+            if (isHaohuoProduct(finalUrl)) {
+                throw new ParseException("DOUYIN_COMMERCE_WEB:" + finalUrl);
+            }
             if (isJingxuanVideo(finalUrl) || isJingxuanVideo(inputUrl)) {
                 ParseResult commerce = parseJingxuan(first.body, finalUrl);
                 if (commerce != null) return commerce;
@@ -137,6 +140,12 @@ public final class DouyinParser implements PlatformParser {
         if (url == null) return false;
         String lower = url.toLowerCase();
         return lower.contains("jingxuan.douyin.com/") && lower.contains("/video/");
+    }
+
+    private static boolean isHaohuoProduct(String url) {
+        if (url == null) return false;
+        String lower = url.toLowerCase();
+        return lower.contains("haohuo.jinritemai.com/") && lower.contains("/trade/detail/");
     }
 
     /** Reads the public SSR payload used by jingxuan.douyin.com/m/video/{id}. */

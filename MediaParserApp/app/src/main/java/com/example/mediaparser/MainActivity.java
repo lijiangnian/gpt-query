@@ -73,6 +73,7 @@ import java.util.concurrent.Executors;
 public final class MainActivity extends Activity {
     private static final int REQ_XHS_WEB = 4102;
     private static final int REQ_ZHIHU_WEB = 4103;
+    private static final int REQ_DOUYIN_COMMERCE_WEB = 4104;
     private static final int BLUE = Color.rgb(39, 100, 231);
     private static final int TEXT = Color.rgb(23, 27, 35);
     private static final int MUTED = Color.rgb(103, 112, 126);
@@ -388,7 +389,9 @@ public final class MainActivity extends Activity {
                 main.post(() -> showResult(result));
             } catch (ParseException e) {
                 String platform = LinkExtractor.detectPlatform(text);
-                if ("xhs".equals(platform)) {
+                if ("douyin".equals(platform) && e.getMessage() != null && e.getMessage().startsWith("DOUYIN_COMMERCE_WEB:")) {
+                    main.post(() -> launchDouyinCommerceFallback(text));
+                } else if ("xhs".equals(platform)) {
                     main.post(() -> launchXhsFallback(text, e.getMessage()));
                 } else if ("zhihu".equals(platform)) {
                     main.post(() -> launchZhihuFallback(text, e.getMessage()));
@@ -415,6 +418,22 @@ public final class MainActivity extends Activity {
         Intent i = new Intent(this, XhsWebViewActivity.class);
         i.putExtra(XhsWebViewActivity.EXTRA_URL, LinkExtractor.ensureScheme(extracted));
         startActivityForResult(i, REQ_XHS_WEB);
+    }
+
+    private void launchDouyinCommerceFallback(String text) {
+        String extracted = LinkExtractor.extractFirstUrl(text);
+        if (extracted == null) {
+            showError("抖音商城分享链接无效");
+            return;
+        }
+        parsing = false;
+        progress.setVisibility(View.GONE);
+        parseButton.setEnabled(true);
+        parseButton.setText("重新解析");
+        status.setText("已识别抖音商城商品，切换本机浏览器提取商品视频和图片…");
+        Intent i = new Intent(this, DouyinCommerceWebViewActivity.class);
+        i.putExtra(DouyinCommerceWebViewActivity.EXTRA_URL, LinkExtractor.ensureScheme(extracted));
+        startActivityForResult(i, REQ_DOUYIN_COMMERCE_WEB);
     }
 
     private void showDouyinCommerceCommand(DouyinCommerceCommand command) {
@@ -526,6 +545,18 @@ public final class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_DOUYIN_COMMERCE_WEB) {
+            if (resultCode != RESULT_OK || data == null) {
+                showError("抖音商城浏览器解析未完成。可重新解析；若商品页要求验证，请先完成验证再提取。");
+                return;
+            }
+            try {
+                showResult(parseDouyinCommerceWebResult(data.getStringExtra(DouyinCommerceWebViewActivity.EXTRA_RESULT_JSON)));
+            } catch (Exception e) {
+                showError("抖音商城结果无效：" + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+            }
+            return;
+        }
         if (requestCode == REQ_ZHIHU_WEB) {
             if (resultCode != RESULT_OK || data == null) {
                 showError("知乎浏览器解析未完成。可在页面完成验证/登录后点“重新提取”。");
@@ -603,6 +634,35 @@ public final class MainActivity extends Activity {
         if (!mainVideoForAudio.isBlank()) b.add(MediaItem.audioTrack("视频完整音轨 · M4A", mainVideoForAudio, headers));
         ParseResult result = b.build();
         if (!result.hasMedia()) throw new IllegalStateException("没有媒体地址");
+        return result;
+    }
+
+    private ParseResult parseDouyinCommerceWebResult(String raw) throws Exception {
+        JSONObject obj = new JSONObject(raw == null ? "{}" : raw);
+        String sourceUrl = obj.optString("sourceUrl", "");
+        ParseResult.Builder b = ParseResult.builder("抖音商城", sourceUrl)
+                .title(obj.optString("title", ""))
+                .author(obj.optString("author", ""))
+                .description(obj.optString("description", ""))
+                .coverUrl(obj.optString("coverUrl", ""));
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("Referer", "https://haohuo.jinritemai.com/");
+        headers.put("User-Agent", com.example.mediaparser.net.HttpClient.MOBILE_UA);
+        JSONArray media = obj.optJSONArray("media");
+        String firstVideo = "";
+        if (media != null) for (int i = 0; i < media.length(); i++) {
+            JSONObject m = media.optJSONObject(i);
+            if (m == null) continue;
+            String url = m.optString("url", "");
+            if (!url.startsWith("https://")) continue;
+            boolean video = "video".equals(m.optString("type", "image"));
+            b.add(new MediaItem(video ? MediaItem.Type.VIDEO : MediaItem.Type.IMAGE,
+                    m.optString("label", video ? "商品视频" : "商品图片"), url, headers));
+            if (video && firstVideo.isBlank()) firstVideo = url;
+        }
+        if (!firstVideo.isBlank()) b.add(MediaItem.audioTrack("商品视频完整音轨 · M4A", firstVideo, headers));
+        ParseResult result = b.build();
+        if (!result.hasMedia()) throw new IllegalStateException("没有商品媒体地址");
         return result;
     }
 
