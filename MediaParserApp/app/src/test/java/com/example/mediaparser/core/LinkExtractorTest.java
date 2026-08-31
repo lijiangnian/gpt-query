@@ -20,4 +20,12 @@ public final class LinkExtractorTest {
     @Test public void recognizesGenericHttpsMediaDirectLink() {
         assertEquals("direct", LinkExtractor.detectPlatform("课程 https://cdn.example.com/video/lesson-01.mp4"));
     }
+
+    @Test public void recognizesRealDouyinCommerceCommandWithoutUrl() {
+        String text = "0X:/ o\\@d.aA :3pm 10/22 【立式水龙头置物架卫生间浴室厕所洗漱台壁挂式免打孔洗手台收纳架】长按此条消息，查看商品详情##jdfvc5ael99##";
+        DouyinCommerceCommand command = DouyinCommerceCommand.parse(text);
+        assertEquals("立式水龙头置物架卫生间浴室厕所洗漱台壁挂式免打孔洗手台收纳架", command.title);
+        assertEquals("jdfvc5ael99", command.token);
+        assertEquals("douyin_commerce", LinkExtractor.detectPlatform(text));
+    }
 }

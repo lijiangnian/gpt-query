@@ -31,6 +31,11 @@ public final class DouyinParser implements PlatformParser {
             firstHeaders.put("Accept", "text/html,application/xhtml+xml");
             HttpClient.Response first = HttpClient.get(inputUrl, firstHeaders);
             String finalUrl = first.finalUrl;
+            if (isJingxuanVideo(finalUrl) || isJingxuanVideo(inputUrl)) {
+                ParseResult commerce = parseJingxuan(first.body, finalUrl);
+                if (commerce != null) return commerce;
+                throw new ParseException("已打开抖音精选商品视频页，但页面没有返回可下载的视频；商品可能没有视频、链接已过期或需要在抖音内登录后重新分享。");
+            }
             IdInfo info = extractId(finalUrl);
             if (info == null) info = extractId(inputUrl);
             if (info == null) throw new ParseException("没有从抖音分享链接中识别到作品 ID；请分享具体视频/图文，不要分享用户主页。");
@@ -126,6 +131,62 @@ public final class DouyinParser implements PlatformParser {
         } catch (Exception e) {
             throw new ParseException("抖音解析失败：" + friendly(e), e);
         }
+    }
+
+    private static boolean isJingxuanVideo(String url) {
+        if (url == null) return false;
+        String lower = url.toLowerCase();
+        return lower.contains("jingxuan.douyin.com/") && lower.contains("/video/");
+    }
+
+    /** Reads the public SSR payload used by jingxuan.douyin.com/m/video/{id}. */
+    static ParseResult parseJingxuan(String html, String sourceUrl) {
+        JSONObject root = tryParseEmbedded(html);
+        if (root == null) return null;
+        JSONObject result = JsonUtil.object(root, "data", "storeState", "detail", "videoData", "result");
+        if (result == null) return null;
+        JSONObject model;
+        Object rawModel = result.opt("video_model");
+        try {
+            model = rawModel instanceof JSONObject ? (JSONObject) rawModel
+                    : rawModel instanceof String ? new JSONObject((String) rawModel) : null;
+        } catch (Exception e) { return null; }
+        if (model == null) return null;
+        String video = bestJingxuanUrl(model.optJSONArray("video_list"));
+        if (video.isBlank()) return null;
+
+        String title = result.optString("title", "").trim();
+        String description = result.optString("abstract", "").trim();
+        String cover = result.optString("cover_image_url", "").trim();
+        String author = JsonUtil.str(result, "media_user", "screen_name");
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("Referer", "https://jingxuan.douyin.com/");
+        headers.put("User-Agent", HttpClient.IPHONE_UA);
+        return ParseResult.builder("抖音商城视频", sourceUrl)
+                .title(title).description(description).author(author).coverUrl(cover)
+                .add(new MediaItem(MediaItem.Type.VIDEO, "商品主视频 · 兼容清晰版", video, headers))
+                .add(MediaItem.audioTrack("商品视频完整音轨 · M4A", video, headers))
+                .build();
+    }
+
+    static String bestJingxuanUrl(JSONArray list) {
+        if (list == null) return "";
+        String best = "";
+        int bestScore = Integer.MIN_VALUE;
+        for (int i = 0; i < list.length(); i++) {
+            JSONObject item = list.optJSONObject(i);
+            if (item == null) continue;
+            String url = item.optString("main_url", "");
+            if (!url.startsWith("https://")) continue;
+            String gear = item.optString("gear_des_key", "").toLowerCase();
+            int resolution = gear.contains("1080p") ? 1080 : gear.contains("720p") ? 720 : gear.contains("540p") ? 540 : 0;
+            // H.264 is broadly playable on Android and is preferred over a higher H.265-only variant.
+            int score = (gear.contains("h264") ? 10000 : 0) + resolution;
+            if (gear.contains("|5:normal")) score += 100;
+            else if (gear.contains("|5:low")) score += 50;
+            if (score > bestScore) { bestScore = score; best = url; }
+        }
+        return best;
     }
 
     static JSONObject tryParseEmbedded(String html) {

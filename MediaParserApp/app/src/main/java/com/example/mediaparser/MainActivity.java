@@ -36,6 +36,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.example.mediaparser.core.LinkExtractor;
+import com.example.mediaparser.core.DouyinCommerceCommand;
 import com.example.mediaparser.core.ShareTextAnalyzer;
 import com.example.mediaparser.model.MediaItem;
 import com.example.mediaparser.model.ParseResult;
@@ -103,6 +104,7 @@ public final class MainActivity extends Activity {
     private boolean groqSettingsExpanded;
     private boolean groqKeyValidating;
     private boolean parsing;
+    private boolean waitingForDouyinCommerceLink;
     private boolean subtitleBusy;
     private View subtitleResultPanel;
     private Button subtitleActionButton;
@@ -129,6 +131,20 @@ public final class MainActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         handleIntent(intent);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (!waitingForDouyinCommerceLink || input == null || parsing) return;
+        String clip = clipboardText();
+        if (LinkExtractor.extractFirstUrl(clip) != null) {
+            waitingForDouyinCommerceLink = false;
+            input.setText(clip);
+            input.setSelection(input.length());
+            status.setText("已收到抖音返回的链接，正在继续解析…");
+            startParse();
+        }
     }
 
     @Override
@@ -163,7 +179,7 @@ public final class MainActivity extends Activity {
         chipsScroll.setHorizontalScrollBarEnabled(false);
         LinearLayout chips = new LinearLayout(this);
         chips.setOrientation(LinearLayout.HORIZONTAL);
-        String[] names = {"抖音", "小红书", "快手", "B站", "微博", "知乎"};
+        String[] names = {"抖音", "抖音商城", "小红书", "快手", "B站", "微博", "知乎"};
         for (String n : names) {
             TextView chip = text(n, 13, TEXT, false);
             chip.setGravity(Gravity.CENTER);
@@ -182,7 +198,7 @@ public final class MainActivity extends Activity {
         input.setTextSize(16);
         input.setTextColor(TEXT);
         input.setHintTextColor(Color.rgb(145, 151, 162));
-        input.setHint("粘贴分享链接或整段分享文案\n支持社媒视频、知乎文章/回答/视频");
+        input.setHint("粘贴分享链接、整段分享文案或抖音商城口令\n支持社媒视频、知乎文章/回答/视频");
         input.setGravity(Gravity.TOP | Gravity.START);
         input.setMinLines(5);
         input.setMaxLines(10);
@@ -289,6 +305,13 @@ public final class MainActivity extends Activity {
         }
         if (!TextUtils.isEmpty(shared)) {
             if (LinkExtractor.extractFirstUrl(shared) == null) {
+                DouyinCommerceCommand command = DouyinCommerceCommand.parse(shared);
+                if (command != null) {
+                    input.setText(shared);
+                    input.setSelection(input.length());
+                    showDouyinCommerceCommand(command);
+                    return;
+                }
                 showResult(ParseResult.builder("复制文本", "").title("已接收文本").contentText(shared.trim()).build());
                 return;
             }
@@ -340,6 +363,11 @@ public final class MainActivity extends Activity {
             toast("先粘贴分享链接或分享文案");
             return;
         }
+        DouyinCommerceCommand command = DouyinCommerceCommand.parse(text);
+        if (command != null && LinkExtractor.extractFirstUrl(text) == null) {
+            showDouyinCommerceCommand(command);
+            return;
+        }
         if (LinkExtractor.extractFirstUrl(text) == null && !text.startsWith("/")) {
             showResult(ParseResult.builder("复制文本", "").title("已接收文本").contentText(text).build());
             return;
@@ -387,6 +415,83 @@ public final class MainActivity extends Activity {
         Intent i = new Intent(this, XhsWebViewActivity.class);
         i.putExtra(XhsWebViewActivity.EXTRA_URL, LinkExtractor.ensureScheme(extracted));
         startActivityForResult(i, REQ_XHS_WEB);
+    }
+
+    private void showDouyinCommerceCommand(DouyinCommerceCommand command) {
+        parsing = false;
+        currentResult = null;
+        progress.setVisibility(View.GONE);
+        parseButton.setEnabled(true);
+        parseButton.setText("重新识别口令");
+        status.setText("已识别抖音商城口令 · 需要抖音 App 先还原商品页");
+        resultBox.removeAllViews();
+        resultBox.setVisibility(View.VISIBLE);
+
+        LinearLayout card = panel();
+        card.addView(text("抖音商城商品", 13, BLUE, true));
+        TextView titleView = text(command.title, 18, TEXT, true);
+        titleView.setPadding(0, dp(7), 0, 0);
+        card.addView(titleView);
+        TextView token = text("口令：" + command.maskedToken(), 12, MUTED, false);
+        token.setPadding(0, dp(6), 0, 0);
+        card.addView(token);
+        TextView explain = text("这类 ##…## 是抖音内部商城口令，不含公开视频 ID。MediaParser 会复制原口令并打开抖音；进入商品页后，在商品主视频点“分享”→ MediaParser，即可自动提取、保存视频或生成字幕。", 13, MUTED, false);
+        explain.setPadding(0, dp(9), 0, dp(10));
+        card.addView(explain);
+
+        Button open = primaryButton("复制口令并打开抖音");
+        open.setOnClickListener(v -> openDouyinCommerce(command.raw));
+        card.addView(open, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        Button continueFromClipboard = secondaryButton("粘贴链接继续");
+        continueFromClipboard.setOnClickListener(v -> continueDouyinCommerceFromClipboard());
+        Button copyCommand = secondaryButton("只复制口令");
+        copyCommand.setOnClickListener(v -> copyText(command.raw, "已复制完整商城口令"));
+        row.addView(continueFromClipboard, new LinearLayout.LayoutParams(0, dp(44), 1f));
+        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, dp(44), 1f);
+        copyParams.setMarginStart(dp(8));
+        row.addView(copyCommand, copyParams);
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rowParams.topMargin = dp(8);
+        card.addView(row, rowParams);
+        TextView note = text("提取范围：商品页公开主视频、封面与完整音轨。商品只有图片时不会虚构视频；付费、登录或地区权限不会被绕过。", 11, MUTED, false);
+        note.setPadding(0, dp(9), 0, 0);
+        card.addView(note);
+        resultBox.addView(card);
+    }
+
+    private void openDouyinCommerce(String rawCommand) {
+        copyText(rawCommand, "口令已复制，正在打开抖音");
+        waitingForDouyinCommerceLink = true;
+        try {
+            Intent launch = getPackageManager().getLaunchIntentForPackage("com.ss.android.ugc.aweme");
+            if (launch == null) throw new IllegalStateException("not installed");
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(launch);
+        } catch (Exception e) {
+            waitingForDouyinCommerceLink = false;
+            toast("未找到抖音 App；口令已复制，可手动打开抖音识别");
+        }
+    }
+
+    private void continueDouyinCommerceFromClipboard() {
+        String clip = clipboardText();
+        if (LinkExtractor.extractFirstUrl(clip) == null) {
+            toast("剪贴板里还没有商品视频链接；请在商品主视频点分享或复制链接");
+            return;
+        }
+        waitingForDouyinCommerceLink = false;
+        input.setText(clip);
+        input.setSelection(input.length());
+        startParse();
+    }
+
+    private String clipboardText() {
+        ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (cm == null || !cm.hasPrimaryClip() || cm.getPrimaryClip() == null || cm.getPrimaryClip().getItemCount() == 0) return "";
+        CharSequence cs = cm.getPrimaryClip().getItemAt(0).coerceToText(this);
+        return cs == null ? "" : cs.toString().trim();
     }
 
     private void launchZhihuFallback(String text, String fastError) {
@@ -1679,6 +1784,7 @@ public final class MainActivity extends Activity {
         if (key == null) return "未识别";
         switch (key) {
             case "douyin": return "抖音";
+            case "douyin_commerce": return "抖音商城口令";
             case "xhs": return "小红书";
             case "kuaishou": return "快手";
             case "bilibili": return "B站";

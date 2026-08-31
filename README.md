@@ -15,5 +15,5 @@ print(response)
 
 ## MediaParser Android
 
-Android 媒体解析与多引擎字幕 APP 已放在 [`MediaParserApp/`](MediaParserApp/)；当前版本为 v0.4.5，安装包位于 [`MediaParserApp/releases/v0.4.5/`](MediaParserApp/releases/v0.4.5/)。
+Android 媒体解析与多引擎字幕 APP 已放在 [`MediaParserApp/`](MediaParserApp/)；当前版本为 v0.4.8，安装包位于 [`MediaParserApp/releases/v0.4.8/`](MediaParserApp/releases/v0.4.8/)。
 

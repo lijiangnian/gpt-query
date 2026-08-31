@@ -29,7 +29,8 @@ public final class DeveloperHelpActivity extends Activity {
         TextView lead=text("MediaParser 是音视频解析、转写、字幕与会议整理工具。凭证由用户自行配置，云端和本地识别方式可以自由切换。",14,MUTED,false);lead.setPadding(0,dp(6),0,dp(4));root.addView(lead);
 
         section(root,"四个主要入口",
-                "直连解析：粘贴受支持的社媒链接。知乎无需固定复制格式，可粘贴完整分享文案、文章/回答/视频链接或直接接收系统“分享/处理文本”；纯文字也能收进 App。知乎视频可提取媒体，文章和回答可复制标题、作者、正文、封面与原链接。\n\n"+
+                "直连解析：粘贴受支持的社媒链接。抖音商城的 ##…## 商品口令会被单独识别：App 复制口令并打开抖音，商品页还原后把商品主视频分享回 MediaParser，即可提取公开主视频、封面和完整音轨；精选商品视频页链接可以直接解析。商城口令本身不含公开视频 ID，App 不会冒充已还原商品。\n\n"+
+                "知乎无需固定复制格式，可粘贴完整分享文案、文章/回答/视频链接或直接接收系统“分享/处理文本”；纯文字也能收进 App。知乎视频可提取媒体，文章和回答可复制标题、作者、正文、封面与原链接。\n\n"+
                 "网盘直链：连接用户自己的 OpenList / AList，把已授权网盘文件转换为临时源站直链，再保存、提取音频或生成字幕。\n\n"+
                 "本地处理：导入手机里的视频、音频或会议录音，选择字幕、逐字稿、会议或多引擎横评模式。\n\n"+
                 "API 设置：配置云端识别服务、测试鉴权，并查看分页诊断报告。设置页面不会占用主页面空间。");
@@ -99,7 +100,7 @@ public final class DeveloperHelpActivity extends Activity {
                 "横评应使用同一份音频；有清晰硬字幕时可作为参考文本。文字准确率与时间戳质量需要分别判断。诊断报告可以复制或保存，但不会包含完整密钥。");
 
         LinearLayout signature=section(root,"关于",
-                "开发者：lijiangnian\n抖音昵称：ljn\n抖音号：70258976876\n版本：MediaParser v0.4.7\n\n感谢测试与反馈。功能、服务商条款和额度都可能变化，实际可用性以 App 当次测试结果及各服务商官方控制台为准。");
+                "开发者：lijiangnian\n抖音昵称：ljn\n抖音号：70258976876\n版本：MediaParser v0.4.8\n\n感谢测试与反馈。功能、服务商条款和额度都可能变化，实际可用性以 App 当次测试结果及各服务商官方控制台为准。");
         TextView sig=text("lijiangnian",18,BLUE,true);sig.setPadding(0,dp(10),0,dp(2));signature.addView(sig);
         link(signature,"打开我的抖音主页 · ljn","https://v.douyin.com/7qpitHslLT0/");
         return scroll;

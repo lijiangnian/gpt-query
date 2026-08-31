@@ -26,6 +26,7 @@ public final class LinkExtractor {
     }
 
     public static String detectPlatform(String textOrUrl) {
+        if (DouyinCommerceCommand.isCommand(textOrUrl)) return "douyin_commerce";
         String raw = extractFirstUrl(textOrUrl);
         if (raw == null && textOrUrl != null && !textOrUrl.contains(" ")) raw = textOrUrl.trim();
         if (raw == null) return null;
