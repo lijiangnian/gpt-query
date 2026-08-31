@@ -7,7 +7,9 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
@@ -36,7 +38,6 @@ import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -56,6 +57,7 @@ public final class DouyinCommerceWebViewActivity extends Activity {
     private String userAgent = "";
     private volatile boolean requesting;
     private volatile boolean finished;
+    private int autoPlayAttempts;
     private final Set<String> sniffedVideos = new LinkedHashSet<>();
     private String productCover = "";
 
@@ -91,8 +93,9 @@ public final class DouyinCommerceWebViewActivity extends Activity {
         retry.setAllCaps(false);
         retry.setOnClickListener(v -> {
             requesting = false;
-            status.setText("正在重新加载商品页…");
-            webView.reload();
+            autoPlayAttempts = 0;
+            status.setText("正在读取商品视频…");
+            tryAutoPlay();
         });
         LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46));
         rp.topMargin = dp(8);
@@ -178,9 +181,53 @@ public final class DouyinCommerceWebViewActivity extends Activity {
                 // The response itself may live in a WebWorker. Starting the already-visible
                 // public product video makes WebView request its real playback URL, which
                 // onLoadResource can capture without reading Worker internals.
-                main.postDelayed(() -> view.evaluateJavascript(AUTO_PLAY_JS, null), 700);
+                autoPlayAttempts = 0;
+                main.postDelayed(DouyinCommerceWebViewActivity.this::tryAutoPlay, 350);
             }
         });
+    }
+
+    /**
+     * Douyin serves more than one product-page layout.  Some Xiaomi WebView builds
+     * receive a different play-button class from the emulator, and a single early
+     * click is also easily lost while the carousel is still hydrating.  Retry a
+     * bounded number of times and click the visible media surface as a layout-
+     * independent fallback.  Loading the video is what exposes its public VOD URL
+     * to onLoadResource; no purchase/login action is performed.
+     */
+    private void tryAutoPlay() {
+        if (finished || webView == null || autoPlayAttempts >= 20) return;
+        autoPlayAttempts++;
+        webView.evaluateJavascript(AUTO_PLAY_JS, value -> {
+            if (finished) return;
+            performNativeTap(value);
+            if (autoPlayAttempts == 1) status.setText("商品页已打开，正在自动读取商品视频…");
+            main.postDelayed(this::tryAutoPlay, 500);
+        });
+    }
+
+    private void performNativeTap(String jsValue) {
+        try {
+            // evaluateJavascript JSON-quotes returned strings.  Parsing through a
+            // one-element JSONArray safely removes that layer without ad-hoc escaping.
+            String point = new JSONArray("[" + jsValue + "]").optString(0, "");
+            String[] values = point.split(",");
+            if (values.length != 3 || webView.getWidth() <= 0) return;
+            float cssX = Float.parseFloat(values[0]);
+            float cssY = Float.parseFloat(values[1]);
+            float cssWidth = Float.parseFloat(values[2]);
+            if (cssWidth <= 0 || cssX < 0 || cssY < 0) return;
+            float scale = webView.getWidth() / cssWidth;
+            float x = Math.min(webView.getWidth() - 1f, cssX * scale);
+            float y = Math.min(webView.getHeight() - 1f, cssY * scale);
+            long now = SystemClock.uptimeMillis();
+            MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0);
+            MotionEvent up = MotionEvent.obtain(now, now + 45, MotionEvent.ACTION_UP, x, y, 0);
+            webView.dispatchTouchEvent(down);
+            webView.dispatchTouchEvent(up);
+            down.recycle();
+            up.recycle();
+        } catch (Exception ignored) {}
     }
 
     private void installHook() {
@@ -393,7 +440,11 @@ public final class DouyinCommerceWebViewActivity extends Activity {
     }
 
     private static String enc(String value) {
-        return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8);
+        try {
+            return URLEncoder.encode(value == null ? "" : value, "UTF-8");
+        } catch (java.io.UnsupportedEncodingException impossible) {
+            return value == null ? "" : value;
+        }
     }
 
     private static boolean isProductVideoUrl(String raw) {
@@ -422,5 +473,14 @@ public final class DouyinCommerceWebViewActivity extends Activity {
             "var X=window.XMLHttpRequest;if(X){var o=X.prototype.open,s=X.prototype.send;X.prototype.open=function(m,u){this.__mpu=u;return o.apply(this,arguments);};X.prototype.send=function(b){var x=this,u=this.__mpu;hit(u,b);if(ok(u))this.addEventListener('load',function(){var t='';try{t=x.responseText||'';}catch(e){}try{if(!t&&x.response)t=typeof x.response==='string'?x.response:JSON.stringify(x.response);}catch(e){}answer(u,t);});return s.apply(this,arguments);};}" +
             "}catch(e){}})();";
 
-    private static final String AUTO_PLAY_JS = "(function(){try{var e=document.querySelector('.head-figure__media-view__video__play-icon')||document.querySelector('.head-figure__media-view__video');if(e){e.click();return 'clicked';}return 'missing';}catch(x){return String(x);}})()";
+    private static final String AUTO_PLAY_JS = "(function(){try{" +
+            "function point(e,f){if(!e)return '';var r=e.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height*(f||.5);try{e.click();}catch(z){}return [x,y,innerWidth].join(',');}" +
+            "var v=document.querySelector('video');if(v){try{v.muted=true;v.play();}catch(x){}return point(v,.5);}" +
+            "var ss=['.head-figure__media-view__video__play-icon','.head-figure__media-view__video','[class*=play-icon]','[class*=playIcon]','[class*=video-play]','[class*=videoPlay]','[aria-label*=播放]'];" +
+            "for(var i=0;i<ss.length;i++){var e=document.querySelector(ss[i]);if(e)return point(e,.5);}" +
+            "var root=document.querySelector('[class*=head-figure]')||document.querySelector('[class*=media-view]');" +
+            "if(root)return point(root,.5);" +
+            "var imgs=[].slice.call(document.images||[]).filter(function(e){var r=e.getBoundingClientRect();return r.width>innerWidth*.55&&r.height>180&&r.top<innerHeight&&r.bottom>0;}).sort(function(a,b){var x=a.getBoundingClientRect(),y=b.getBoundingClientRect();return y.width*y.height-x.width*x.height;});" +
+            "if(imgs.length)return point(imgs[0],.5);" +
+            "return '';}catch(x){return '';}})()";
 }
