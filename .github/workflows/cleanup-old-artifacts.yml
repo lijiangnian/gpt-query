@@ -1,0 +1,50 @@
+name: One-time old artifact cleanup
+on:
+  push:
+    branches: ["codex/cleanup-actions-artifacts-20260909"]
+    paths: [".github/workflows/cleanup-old-artifacts.yml"]
+permissions:
+  contents: read
+  actions: write
+jobs:
+  cleanup:
+    if: github.repository_owner == 'lijiangnian' && github.ref == 'refs/heads/codex/cleanup-actions-artifacts-20260909'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Delete only the inventoried old artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.error
+          repository = os.environ["GITHUB_REPOSITORY"]
+          assert repository == "lijiangnian/gpt-query"
+          expected = [{"id":9758832958,"name":"MediaParser-debug-apk","size":15673229,"created_at":"2026-08-31T13:01:15Z"},{"id":9758839363,"name":"MediaParser-debug-apk","size":15673229,"created_at":"2026-08-31T13:01:27Z"},{"id":9757665955,"name":"MediaParser-debug-apk","size":15274560,"created_at":"2026-08-31T12:24:52Z"},{"id":9757672669,"name":"MediaParser-debug-apk","size":15274560,"created_at":"2026-08-31T12:25:05Z"},{"id":9757645758,"name":"MediaParser-debug-apk","size":15274561,"created_at":"2026-08-31T12:24:15Z"},{"id":9757644331,"name":"MediaParser-debug-apk","size":15274557,"created_at":"2026-08-31T12:24:12Z"},{"id":9728687040,"name":"MediaParser-debug-apk","size":15270683,"created_at":"2026-08-30T07:53:02Z"},{"id":9728686602,"name":"MediaParser-debug-apk","size":15270677,"created_at":"2026-08-30T07:53:00Z"},{"id":9728447625,"name":"MediaParser-debug-apk","size":15269885,"created_at":"2026-08-30T07:33:22Z"},{"id":9728419112,"name":"MediaParser-debug-apk","size":15269886,"created_at":"2026-08-30T07:30:54Z"},{"id":9718475827,"name":"MediaParser-debug-apk","size":15238094,"created_at":"2026-08-29T17:20:34Z"},{"id":9716699674,"name":"MediaParser-debug-apk","size":15231905,"created_at":"2026-08-29T14:59:55Z"},{"id":9716484450,"name":"MediaParser-debug-apk","size":15231019,"created_at":"2026-08-29T14:42:30Z"},{"id":9714868868,"name":"MediaParser-debug-apk","size":15217316,"created_at":"2026-08-29T12:32:52Z"},{"id":9714620841,"name":"MediaParser-debug-apk","size":15209710,"created_at":"2026-08-29T12:12:28Z"},{"id":9714282170,"name":"MediaParser-debug-apk","size":15178435,"created_at":"2026-08-29T11:42:37Z"},{"id":9660636745,"name":"android-sign-tools-35-v13","size":1102284,"created_at":"2026-08-27T19:02:09Z"},{"id":9660446042,"name":"android-sign-tools-35-v13","size":1102284,"created_at":"2026-08-27T18:56:29Z"},{"id":9660530846,"name":"xiaomi-screenshot-assistant-v1.3-private-placeholder-arm64","size":7099414,"created_at":"2026-08-27T18:59:02Z"},{"id":9660441935,"name":"android-sign-tools-35-v13","size":1102284,"created_at":"2026-08-27T18:56:22Z"},{"id":9660440166,"name":"android-sign-tools-35-v13","size":1102284,"created_at":"2026-08-27T18:56:19Z"},{"id":9660272037,"name":"android-sign-tools-35-v13","size":1102284,"created_at":"2026-08-27T18:51:15Z"},{"id":9660268573,"name":"android-sign-tools-35-v13","size":1102284,"created_at":"2026-08-27T18:51:09Z"},{"id":9651026725,"name":"xiaomi-screenshot-assistant-v1.2-private-placeholder-arm64","size":7099352,"created_at":"2026-08-27T14:38:26Z"},{"id":9651034621,"name":"xiaomi-screenshot-assistant-v1.2-private-placeholder-arm64","size":7099345,"created_at":"2026-08-27T14:38:39Z"},{"id":9637312958,"name":"xiaomi-screenshot-assistant-v1.2-private-placeholder-arm64","size":7099341,"created_at":"2026-08-27T07:35:37Z"},{"id":9637310179,"name":"xiaomi-screenshot-assistant-v1.2-private-placeholder-arm64","size":7099341,"created_at":"2026-08-27T07:35:31Z"},{"id":9629373273,"name":"xiaomi-screenshot-assistant-v1.1-ai-arm64","size":7102276,"created_at":"2026-08-27T00:59:52Z"},{"id":9629374319,"name":"xiaomi-screenshot-assistant-v1.1-ai-arm64","size":7102264,"created_at":"2026-08-27T00:59:55Z"},{"id":9628557654,"name":"xiaomi-screenshot-assistant-debug","size":53686643,"created_at":"2026-08-27T00:19:03Z"},{"id":9528360471,"name":"VLink-v1.3.0-APK","size":316109,"created_at":"2026-08-24T16:11:40Z"},{"id":9528359609,"name":"VLink-v1.3.0-APK","size":316108,"created_at":"2026-08-24T16:11:39Z"},{"id":9528358495,"name":"VLink-v1.3.0-APK","size":316096,"created_at":"2026-08-24T16:11:38Z"},{"id":9528354471,"name":"VLink-v1.3.0-APK","size":316096,"created_at":"2026-08-24T16:11:31Z"},{"id":9528339942,"name":"VLink-v1.3.0-APK","size":316104,"created_at":"2026-08-24T16:11:08Z"},{"id":9528342395,"name":"VLink-v1.3.0-APK","size":316104,"created_at":"2026-08-24T16:11:12Z"},{"id":9528324499,"name":"VLink-v1.3.0-APK","size":315988,"created_at":"2026-08-24T16:10:44Z"},{"id":9528324361,"name":"VLink-v1.3.0-APK","size":315986,"created_at":"2026-08-24T16:10:44Z"},{"id":9528287906,"name":"VLink-v1.3.0-APK","size":308871,"created_at":"2026-08-24T16:09:46Z"},{"id":9528278978,"name":"VLink-v1.3.0-APK","size":308870,"created_at":"2026-08-24T16:09:31Z"},{"id":9528283932,"name":"VLink-v1.3.0-APK","size":308352,"created_at":"2026-08-24T16:09:39Z"},{"id":9528276886,"name":"VLink-v1.3.0-APK","size":308348,"created_at":"2026-08-24T16:09:28Z"},{"id":9527598241,"name":"VLink-v1.3.0-APK","size":306460,"created_at":"2026-08-24T15:51:31Z"},{"id":9527591588,"name":"VLink-v1.3.0-APK","size":306464,"created_at":"2026-08-24T15:51:20Z"},{"id":9527555906,"name":"VLink-v1.2.0-APK","size":306462,"created_at":"2026-08-24T15:50:24Z"},{"id":9527561418,"name":"VLink-v1.2.0-APK","size":306462,"created_at":"2026-08-24T15:50:33Z"},{"id":9527547626,"name":"VLink-v1.2.0-APK","size":306457,"created_at":"2026-08-24T15:50:12Z"},{"id":9527548856,"name":"VLink-v1.2.0-APK","size":306457,"created_at":"2026-08-24T15:50:14Z"},{"id":9527542970,"name":"VLink-v1.2.0-APK","size":306366,"created_at":"2026-08-24T15:50:05Z"},{"id":9527544189,"name":"VLink-v1.2.0-APK","size":306366,"created_at":"2026-08-24T15:50:06Z"},{"id":9527082590,"name":"VLink-v1.2.0-APK","size":303465,"created_at":"2026-08-24T15:38:21Z"},{"id":9527079694,"name":"VLink-v1.2.0-APK","size":303463,"created_at":"2026-08-24T15:38:17Z"},{"id":9527081951,"name":"VLink-Converter-APK","size":303494,"created_at":"2026-08-24T15:38:20Z"},{"id":9527081504,"name":"VLink-Converter-APK","size":303499,"created_at":"2026-08-24T15:38:19Z"},{"id":9527040034,"name":"VLink-Converter-APK","size":303487,"created_at":"2026-08-24T15:37:16Z"},{"id":9527036439,"name":"VLink-Converter-APK","size":303489,"created_at":"2026-08-24T15:37:10Z"},{"id":9527026112,"name":"VLink-Converter-APK","size":302313,"created_at":"2026-08-24T15:36:54Z"},{"id":9527028750,"name":"VLink-Converter-APK","size":302311,"created_at":"2026-08-24T15:36:58Z"},{"id":9526792754,"name":"VLink-Converter-APK","size":300641,"created_at":"2026-08-24T15:30:59Z"},{"id":9526787903,"name":"VLink-Converter-APK","size":300636,"created_at":"2026-08-24T15:30:52Z"},{"id":9526532350,"name":"VLink-Converter-APK","size":300554,"created_at":"2026-08-24T15:24:34Z"},{"id":9526535729,"name":"VLink-Converter-APK","size":300559,"created_at":"2026-08-24T15:24:39Z"},{"id":9526502098,"name":"VLink-Converter-APK","size":300557,"created_at":"2026-08-24T15:23:46Z"},{"id":9526426833,"name":"VLink-Converter-APK","size":301064,"created_at":"2026-08-24T15:21:51Z"},{"id":9526380681,"name":"VLink-Converter-APK","size":297397,"created_at":"2026-08-24T15:20:41Z"},{"id":9526346707,"name":"VLink-Converter-APK","size":11232,"created_at":"2026-08-24T15:19:51Z"}]
+          headers = {"Authorization": "Bearer " + os.environ["GH_TOKEN"], "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+          deleted = []
+          for item in expected:
+              url = "https://api.github.com/repos/" + repository + "/actions/artifacts/" + str(item["id"])
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30) as response:
+                      actual = json.load(response)
+              except urllib.error.HTTPError as error:
+                  if error.code == 404:
+                      print("Already absent:", item["id"])
+                      continue
+                  raise
+              assert actual["name"] == item["name"], ("Name changed", item["id"])
+              assert actual["size_in_bytes"] == item["size"], ("Size changed", item["id"])
+              assert actual["created_at"] == item["created_at"], ("Creation time changed", item["id"])
+              assert not any(word in actual["name"].lower() for word in ["signing-backup", "keystore", "credential", "recovery", "private-key"])
+              with urllib.request.urlopen(urllib.request.Request(url, method="DELETE", headers=headers), timeout=30) as response:
+                  assert response.status == 204
+              deleted.append(item)
+              print("DELETED", item["id"], item["size"], item["name"], flush=True)
+          result = {"repository": repository, "deleted_count": len(deleted), "deleted_bytes": sum(x["size"] for x in deleted)}
+          print("CLEANUP_RESULT " + json.dumps(result), flush=True)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as out:
+              out.write("Deleted " + str(result["deleted_count"]) + " previously inventoried artifacts (" + str(result["deleted_bytes"]) + " bytes).\n")
+          
+          PY
