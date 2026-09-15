@@ -1,0 +1,53 @@
+name: One-time Actions storage cleanup 20260916
+on:
+  push:
+    branches: ["main"]
+    paths: [".github/workflows/cleanup-actions-storage-20260916.yml"]
+permissions:
+  contents: read
+  actions: write
+jobs:
+  cleanup:
+    if: github.repository_owner == 'lijiangnian'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Delete rebuildable Actions artifacts and caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.error
+          repo=os.environ['GITHUB_REPOSITORY']; headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}; protected=('signing','keystore','credential','recovery','private-key','private_key')
+          def get_json(url):
+              with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=30) as r: return json.load(r)
+          artifacts=[]; page=1
+          while True:
+              batch=get_json(f'https://api.github.com/repos/{repo}/actions/artifacts?per_page=100&page={page}').get('artifacts',[]); artifacts+=batch
+              if len(batch)<100: break
+              page+=1
+          deleted=[]; kept=[]
+          for a in artifacts:
+              if any(x in a.get('name','').lower() for x in protected): kept.append(a); continue
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(f'https://api.github.com/repos/{repo}/actions/artifacts/{a["id"]}',method='DELETE',headers=headers),timeout=30) as r:
+                      if r.status==204: deleted.append(a)
+              except urllib.error.HTTPError as e:
+                  if e.code!=404: raise
+          caches=[]; page=1
+          while True:
+              batch=get_json(f'https://api.github.com/repos/{repo}/actions/caches?per_page=100&page={page}').get('actions_caches',[]); caches+=batch
+              if len(batch)<100: break
+              page+=1
+          deleted_cache=[]
+          for c in caches:
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(f'https://api.github.com/repos/{repo}/actions/caches/{c["id"]}',method='DELETE',headers=headers),timeout=30) as r:
+                      if r.status==204: deleted_cache.append(c)
+              except urllib.error.HTTPError as e:
+                  if e.code!=404: raise
+          result={'repo':repo,'artifacts_deleted':len(deleted),'artifact_bytes':sum(x.get('size_in_bytes',0) for x in deleted),'protected_artifacts_kept':len(kept),'caches_deleted':len(deleted_cache),'cache_bytes':sum(x.get('size_in_bytes',0) for x in deleted_cache)}
+          print('CLEANUP_RESULT '+json.dumps(result),flush=True)
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f: f.write('```json\n'+json.dumps(result,indent=2)+'\n```\n')
+          PY
