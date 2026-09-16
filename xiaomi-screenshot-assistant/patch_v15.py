@@ -89,15 +89,13 @@ if "if (deleteAfterLoad) runCatching" not in s:
 
 # Launch the installed camera app. On modern Android use a full-resolution MediaStore URI
 # without asking for storage or camera permission; on older Android keep a compatible fallback.
+# Do not pre-query resolveActivity: Android 11+ package visibility can hide the camera from
+# queries even though the implicit ACTION_IMAGE_CAPTURE intent can still be launched.
 if "private fun launchCamera()" not in s:
     marker = "    private fun showHome() {\n"
     camera_fn = '''    @Suppress("DEPRECATION")
     private fun launchCamera() {
         val capture = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-        if (capture.resolveActivity(packageManager) == null) {
-            showToast("没有找到可用的相机应用")
-            return
-        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val values = ContentValues().apply {
@@ -114,6 +112,7 @@ if "private fun launchCamera()" not in s:
             }
             pendingCameraUri = uri
             capture.putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            capture.clipData = ClipData.newRawUri("camera-output", uri)
             capture.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
             runCatching { startActivityForResult(capture, REQUEST_CAMERA_FULL) }
                 .onFailure {
