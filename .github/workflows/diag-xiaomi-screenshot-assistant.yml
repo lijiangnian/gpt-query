@@ -43,6 +43,10 @@ jobs:
           print('OpenRouter endpoint configured:', 'openrouter.ai' in eng)
           print('testConnection function exists:', 'testConnection' in eng)
           print('AI settings input disabled:', 'isEnabled=false' in (base/'MainActivity.kt').read_text() or 'isEnabled = false' in (base/'MainActivity.kt').read_text())
-          models=sorted(set(re.findall(r'(?:llama|qwen|gemma|mixtral)[A-Za-z0-9._:/-]*', sec+'\n'+eng, re.I)))
-          print('model identifiers:', ', '.join(models[:10]))
+          print('--- AI engine non-secret routing lines ---')
+          for i,line in enumerate(eng.splitlines(),1):
+              low=line.lower()
+              if any(k in low for k in ['enum class aiprovider','displayname','model','endpoint','api.groq.com','openrouter.ai','testconnection','httpurlconnection','responsecode']):
+                  redacted=re.sub(r'gsk_[A-Za-z0-9_-]+','gsk_REDACTED',line)
+                  print(f'{i}: {redacted}')
           PY
