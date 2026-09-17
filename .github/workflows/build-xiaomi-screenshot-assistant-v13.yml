@@ -1,0 +1,51 @@
+name: Build Xiaomi Screenshot Assistant v1.3
+
+on:
+  push:
+    branches: [xiaomi-screenshot-assistant-v1]
+    paths:
+      - 'xiaomi-screenshot-assistant/patch_v13.py'
+      - '.github/workflows/build-xiaomi-screenshot-assistant-v13.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore Android project
+        run: |
+          cat xiaomi-screenshot-assistant/chunks/*.b64 | base64 -d > /tmp/xiaomi-src.tar.gz
+          gzip -t /tmp/xiaomi-src.tar.gz
+          rm -rf xiaomi-screenshot-assistant-v1.1
+          tar -xzf /tmp/xiaomi-src.tar.gz
+      - name: Apply v1.3 patch
+        run: python3 xiaomi-screenshot-assistant/patch_v13.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        run: yes | sdkmanager --licenses >/dev/null && sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Stage signing tools
+        run: |
+          mkdir -p /tmp/android-sign-tools/lib /tmp/android-sign-tools/lib64
+          cp "$ANDROID_HOME/build-tools/35.0.0/apksigner" /tmp/android-sign-tools/
+          cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" /tmp/android-sign-tools/
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" /tmp/android-sign-tools/lib/
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib64/libc++.so" /tmp/android-sign-tools/lib64/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-sign-tools-35-v13-full
+          path: /tmp/android-sign-tools
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build arm64 release APK
+        working-directory: xiaomi-screenshot-assistant-v1.1
+        run: gradle --no-daemon assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xiaomi-screenshot-assistant-v1.3-private-placeholder-arm64
+          path: xiaomi-screenshot-assistant-v1.1/app/build/outputs/apk/release/app-release.apk

@@ -1,0 +1,67 @@
+name: Build Xiaomi Screenshot Assistant v1.6
+
+on:
+  push:
+    branches: [xiaomi-screenshot-assistant-v1]
+    paths:
+      - 'xiaomi-screenshot-assistant/patch_v16.py'
+      - '.github/workflows/build-xiaomi-screenshot-assistant-v16.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore Android project
+        run: |
+          cat xiaomi-screenshot-assistant/chunks/*.b64 | base64 -d > /tmp/xiaomi-src.tar.gz
+          gzip -t /tmp/xiaomi-src.tar.gz
+          rm -rf xiaomi-screenshot-assistant-v1.1
+          tar -xzf /tmp/xiaomi-src.tar.gz
+      - name: Apply v1.4 patch
+        run: python3 xiaomi-screenshot-assistant/patch_v14.py
+      - name: Apply v1.5 camera patch
+        run: python3 xiaomi-screenshot-assistant/patch_v15.py
+      - name: Apply v1.6 lifecycle and key diagnostics patch
+        run: python3 xiaomi-screenshot-assistant/patch_v16.py
+      - name: Static regression checks
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          main=Path('xiaomi-screenshot-assistant-v1.1/app/src/main/java/com/vsme/screenshotassistant/MainActivity.kt').read_text()
+          eng=Path('xiaomi-screenshot-assistant-v1.1/app/src/main/java/com/vsme/screenshotassistant/AiTranslationEngine.kt').read_text()
+          gradle=Path('xiaomi-screenshot-assistant-v1.1/app/build.gradle.kts').read_text()
+          checks={
+            'camera_uri_persisted':'persistPendingCameraUri(uri)' in main and 'restorePendingCameraUri()' in main,
+            'camera_onresume_recovery':'maybeRecoverCameraReturn()' in main,
+            'large_photo_downsample':'decodeBitmapForAssistant' in main and '3200' in main,
+            'key_field_editable':'isEnabled=true' in main or 'isEnabled = true' in main,
+            'key_test_models_endpoint':'https://api.groq.com/openai/v1/models' in eng,
+            'network_timeouts':'readTimeout = 35000' in eng,
+            'version_1_6':'1.6.0-private' in gradle,
+          }
+          for k,v in checks.items(): print(k, 'PASS' if v else 'FAIL')
+          if not all(checks.values()): raise SystemExit('static regression check failed')
+          PY
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android SDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build arm64 release APK
+        working-directory: xiaomi-screenshot-assistant-v1.1
+        run: gradle --no-daemon assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xiaomi-screenshot-assistant-v1.6-camera-return-fix-arm64
+          path: xiaomi-screenshot-assistant-v1.1/app/build/outputs/apk/release/app-release.apk
