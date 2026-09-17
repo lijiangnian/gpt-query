@@ -1,0 +1,48 @@
+name: Diagnose Xiaomi Screenshot Assistant
+
+on:
+  push:
+    branches: [xiaomi-screenshot-assistant-v1]
+    paths:
+      - '.github/workflows/diag-xiaomi-screenshot-assistant.yml'
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore and patch source
+        run: |
+          cat xiaomi-screenshot-assistant/chunks/*.b64 | base64 -d > /tmp/xiaomi-src.tar.gz
+          rm -rf xiaomi-screenshot-assistant-v1.1
+          tar -xzf /tmp/xiaomi-src.tar.gz
+          python3 xiaomi-screenshot-assistant/patch_v14.py
+          python3 xiaomi-screenshot-assistant/patch_v15.py
+      - name: Camera lifecycle diagnostics
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('xiaomi-screenshot-assistant-v1.1/app/src/main/java/com/vsme/screenshotassistant/MainActivity.kt').read_text()
+          print('pendingCameraUri field:', 'pendingCameraUri' in s)
+          print('onActivityResult:', 'override fun onActivityResult' in s)
+          section=s[s.find('private fun launchCamera()'):s.find('private fun showHome()')]
+          print('camera URI persisted outside memory:', any(x in section for x in ['SharedPreferences','getPreferences(','savedInstanceState']))
+          print('auto translate after camera:', 'loadSharedImage(uri, MODE_TRANSLATE' in s)
+          PY
+      - name: AI wiring diagnostics
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          base=Path('xiaomi-screenshot-assistant-v1.1/app/src/main/java/com/vsme/screenshotassistant')
+          sec=(base/'SecureStore.kt').read_text()
+          eng=(base/'AiTranslationEngine.kt').read_text()
+          print('embedded Groq credential configured:', bool(re.search(r'gsk_[A-Za-z0-9_-]{10,}', sec)))
+          print('Groq endpoint configured:', 'api.groq.com' in eng)
+          print('OpenRouter endpoint configured:', 'openrouter.ai' in eng)
+          print('testConnection function exists:', 'testConnection' in eng)
+          print('AI settings input disabled:', 'isEnabled=false' in (base/'MainActivity.kt').read_text() or 'isEnabled = false' in (base/'MainActivity.kt').read_text())
+          models=sorted(set(re.findall(r'(?:llama|qwen|gemma|mixtral)[A-Za-z0-9._:/-]*', sec+'\n'+eng, re.I)))
+          print('model identifiers:', ', '.join(models[:10]))
+          PY
