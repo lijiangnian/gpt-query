@@ -49,4 +49,11 @@ jobs:
               if any(k in low for k in ['enum class aiprovider','displayname','model','endpoint','api.groq.com','openrouter.ai','testconnection','httpurlconnection','responsecode']):
                   redacted=re.sub(r'gsk_[A-Za-z0-9_-]+','gsk_REDACTED',line)
                   print(f'{i}: {redacted}')
+          print('--- testConnection body ---')
+          lines=eng.splitlines()
+          start=next((i for i,l in enumerate(lines) if 'fun testConnection' in l), None)
+          if start is not None:
+              for j in range(start, min(start+42, len(lines))):
+                  line=re.sub(r'gsk_[A-Za-z0-9_-]+','gsk_REDACTED',lines[j])
+                  print(f'{j+1}: {line}')
           PY
